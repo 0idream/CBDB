@@ -1,0 +1,532 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>蘇軾 时空 GIS 可视化</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+  <style>
+    :root{--bg:#f5efe4;--panel:rgba(255,252,247,.96);--line:rgba(77,90,108,.18);--text:#1c2430;--muted:#5d6775;--accent:#9d3f22;--index:#c76a12;--biog:#1e6b8f;--entry:#2d8b57;--office:#7a52c7;--assoc:#b44b59;--shadow:0 16px 40px rgba(40,30,18,.10)}
+    *{box-sizing:border-box}body{margin:0;font:14px/1.7 "Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;color:var(--text);background:radial-gradient(circle at top left,rgba(157,63,34,.08),transparent 28%),linear-gradient(180deg,#f7f1e8,#f1eadf)}h1,h2,h3,h4,p{margin:0}
+    .app{display:grid;grid-template-columns:340px minmax(0,1fr) 420px;min-height:100vh}.left,.right{padding:20px;background:rgba(248,242,233,.9);overflow:auto}.left{border-right:1px solid var(--line)}.right{border-left:1px solid var(--line)}.center{display:grid;grid-template-rows:auto auto minmax(0,1fr) auto;min-width:0}
+    .card{margin:16px;background:var(--panel);border:1px solid var(--line);border-radius:20px;box-shadow:var(--shadow);padding:18px}.eyebrow{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);font-weight:700}.muted{color:var(--muted)}.small{font-size:12px}.mono{font-family:Consolas,"SFMono-Regular",monospace}
+    .stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:14px}.stat{padding:12px;border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,.68)}.stat strong{display:block;margin-top:6px;font-size:24px}
+    .chips,.source-row,.event-meta{display:flex;flex-wrap:wrap;gap:8px}.chips{margin-top:12px}.chip,.badge{display:inline-flex;align-items:center;gap:6px;padding:5px 9px;border-radius:999px;border:1px solid var(--line);background:rgba(255,255,255,.78);color:var(--muted);font-size:12px}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}
+    .legend{margin-top:12px;padding:12px;border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,.68)}.group{margin-top:14px;padding-top:14px;border-top:1px dashed var(--line)}.group:first-child{margin-top:0;padding-top:0;border-top:0}.list{display:grid;gap:8px}.list label{display:flex;gap:8px;align-items:center;padding:8px 10px;border-radius:12px;background:rgba(255,255,255,.6)}
+    button{border:1px solid var(--line);background:rgba(255,255,255,.82);border-radius:12px;padding:8px 12px;cursor:pointer;font:inherit}input[type="range"]{width:100%;margin-top:14px}
+    .timeline-head{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap}.timeline-actions{display:flex;gap:10px;flex-wrap:wrap}.year-wrap{display:flex;gap:12px;align-items:center;margin-top:8px;flex-wrap:wrap}
+    .year-pill{display:inline-flex;align-items:center;justify-content:center;padding:10px 14px;border-radius:999px;background:rgba(157,63,34,.12);color:var(--accent);font-size:20px;font-weight:700;min-width:90px;text-align:center;transition:transform .45s ease,box-shadow .45s ease,background-color .45s ease}.year-pill.changed{transform:translateY(-2px) scale(1.04);box-shadow:0 10px 24px rgba(157,63,34,.18);background:rgba(157,63,34,.18)}.transition-note{min-height:20px;color:var(--accent);font-size:12px;font-weight:600}
+    .progress-track{position:relative;height:12px;margin-top:14px;border-radius:999px;background:rgba(30,107,143,.08);overflow:hidden;border:1px solid rgba(30,107,143,.10)}.progress-fill{position:absolute;inset:0 auto 0 0;width:0%;background:linear-gradient(90deg,rgba(30,107,143,.75),rgba(157,63,34,.72));transition:width .5s ease}.progress-pin{position:absolute;top:50%;width:16px;height:16px;border-radius:50%;background:#fff;border:3px solid var(--accent);transform:translate(-50%,-50%);box-shadow:0 0 0 5px rgba(157,63,34,.10);transition:left .5s ease}
+    .timeline-meta{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px}.meta-pill{padding:6px 10px;border-radius:999px;background:rgba(255,255,255,.72);border:1px solid var(--line);color:var(--muted);font-size:12px}
+    .hist{display:grid;grid-template-columns:repeat(auto-fit,minmax(6px,1fr));gap:2px;align-items:end;height:88px;margin-top:14px;padding:10px 8px 0;border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,.62)}.bar{border-radius:8px 8px 0 0;background:linear-gradient(180deg,rgba(30,107,143,.8),rgba(157,63,34,.72));opacity:.35;cursor:pointer;transition:opacity .25s ease,transform .25s ease}.bar.active{opacity:1;transform:translateY(-2px);outline:1px solid rgba(157,63,34,.2)}.hist-years{display:flex;justify-content:space-between;margin-top:6px;color:var(--muted);font-size:12px}
+    #map{margin:0 16px;border-radius:22px;border:1px solid var(--line);min-height:560px;overflow:hidden;box-shadow:var(--shadow)}.journey-card{margin-top:12px;padding:14px;border-radius:16px;background:linear-gradient(135deg,rgba(30,107,143,.08),rgba(157,63,34,.10)),rgba(255,255,255,.78);border:1px solid rgba(30,107,143,.12)}.journey-card strong{display:block;font-size:16px;margin-top:4px}
+    .events,.details{display:grid;gap:10px;margin-top:14px}.event,.detail{padding:14px;border-radius:16px;border:1px solid var(--line);background:rgba(255,255,255,.72);animation:fadeIn .35s ease}.event.current-stop{border-color:rgba(157,63,34,.32);box-shadow:0 12px 24px rgba(157,63,34,.10);background:linear-gradient(135deg,rgba(157,63,34,.08),rgba(255,255,255,.82)),rgba(255,255,255,.82)}@keyframes fadeIn{from{opacity:.45;transform:translateY(4px)}to{opacity:1;transform:none}}.event h4,.detail h4{margin-bottom:6px}.kv{display:grid;grid-template-columns:86px minmax(0,1fr);gap:8px;padding:4px 0;font-size:13px}.kv b{color:var(--muted)}.empty{padding:8px 0;color:var(--muted)}
+    .marker{position:relative;display:flex;align-items:center;justify-content:center;border-radius:50%;background:var(--g);width:var(--s);height:var(--s);box-shadow:0 8px 18px rgba(0,0,0,.18);transition:transform .35s ease,filter .35s ease,opacity .35s ease}.marker::after{content:"";position:absolute;inset:5px;border-radius:50%;background:rgba(255,255,255,.92);border:1px solid rgba(28,36,48,.12)}.marker::before{content:"";position:absolute;inset:-4px;border-radius:50%;background:rgba(255,255,255,.2)}.marker.is-current{transform:scale(1.14);filter:drop-shadow(0 0 14px rgba(157,63,34,.28))}.marker.is-current::before{background:rgba(157,63,34,.14);animation:pulse 1.8s ease-out infinite}.core{position:relative;width:8px;height:8px;border-radius:50%;background:var(--c);box-shadow:0 0 0 2px rgba(255,255,255,.9);z-index:1}@keyframes pulse{0%{transform:scale(.88);opacity:.85}75%{transform:scale(1.28);opacity:.12}100%{transform:scale(1.32);opacity:0}}
+    .leaflet-popup-content{margin:14px 16px}@media (max-width:1280px){.app{grid-template-columns:320px minmax(0,1fr)}.right{grid-column:1/-1;border-left:0;border-top:1px solid var(--line)}}@media (max-width:900px){.app{grid-template-columns:1fr}.left{border-right:0;border-bottom:1px solid var(--line)}.right{border-top:1px solid var(--line)}}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="left">
+      <div class="card">
+        <div class="eyebrow">GIS 时间地图</div>
+        <h1 id="hero-name" style="margin-top:8px;font-size:32px"></h1>
+        <p id="hero-sub" class="muted" style="margin-top:8px"></p>
+        <div class="stats" id="stats"></div>
+        <div class="chips">
+          <span class="chip"><span class="dot" style="background:var(--index)"></span>索引地</span>
+          <span class="chip"><span class="dot" style="background:var(--biog)"></span>生平地点</span>
+          <span class="chip"><span class="dot" style="background:var(--entry)"></span>入仕地点</span>
+          <span class="chip"><span class="dot" style="background:var(--office)"></span>任官地点</span>
+          <span class="chip"><span class="dot" style="background:var(--assoc)"></span>关系发生地</span>
+        </div>
+        <div class="legend small muted">只显示“有明确时间且有坐标”的记录。地图点位使用彩色环形标记，当前年份停留地点会单独高亮，生平路径会按年份逐步亮起。</div>
+      </div>
+
+      <div class="card">
+        <div class="group">
+          <h3>时间模式</h3>
+          <div class="list">
+            <label><input type="radio" name="mode" value="active" checked> 只显示当前年份有效事件</label>
+            <label><input type="radio" name="mode" value="cumulative"> 累积显示截至当前年份事件</label>
+            <label><input type="radio" name="mode" value="all"> 忽略年份，显示全部有时间事件</label>
+          </div>
+        </div>
+        <div class="group"><h3>维度筛选</h3><div id="dims" class="list"></div></div>
+        <div class="group"><h3>来源表筛选</h3><div id="tables" class="list"></div></div>
+        <div class="group">
+          <h3>其他</h3>
+          <div class="list">
+            <label><input id="toggle-route" type="checkbox" checked> 显示生平路径线</label>
+            <label><input id="toggle-anomaly" type="checkbox" checked> 显示时间修正提示</label>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <main class="center">
+      <div class="card">
+        <div class="timeline-head">
+          <div>
+            <div class="eyebrow">时间轴</div>
+            <div class="year-wrap">
+              <div id="year-pill" class="year-pill"></div>
+              <div>
+                <div id="year-summary" class="muted"></div>
+                <div id="transition-note" class="transition-note"></div>
+              </div>
+            </div>
+          </div>
+          <div class="timeline-actions">
+            <button id="prev">上一年</button>
+            <button id="play">播放</button>
+            <button id="next">下一年</button>
+            <button id="fit">全局视野</button>
+          </div>
+        </div>
+
+        <div class="progress-track"><div id="progress-fill" class="progress-fill"></div><div id="progress-pin" class="progress-pin"></div></div>
+        <div class="timeline-meta">
+          <span id="timeline-mode" class="meta-pill"></span>
+          <span id="timeline-window" class="meta-pill"></span>
+          <span id="timeline-route" class="meta-pill"></span>
+        </div>
+        <input id="range" type="range">
+        <div id="hist" class="hist"></div>
+        <div class="hist-years"><span id="hist-min"></span><span id="hist-max"></span></div>
+
+        <div class="journey-card">
+          <div class="eyebrow">当前停留</div>
+          <strong id="journey-stop">正在识别</strong>
+          <p id="journey-desc" class="muted" style="margin-top:6px"></p>
+        </div>
+      </div>
+
+      <div id="map"></div>
+
+      <div class="card">
+        <div class="eyebrow">当前年份事件</div>
+        <h2 style="margin-top:8px">地图点位与时序事件</h2>
+        <p class="muted" style="margin-top:8px">点击地图点位后，右侧会同步展示该地点在当前筛选条件下的详细信息。</p>
+        <div id="events" class="events"></div>
+      </div>
+    </main>
+
+    <aside class="right">
+      <div class="card">
+        <div class="eyebrow">详情面板</div>
+        <h2 id="detail-title" style="margin-top:8px">请选择地图点位</h2>
+        <p id="detail-sub" class="muted" style="margin-top:8px">点击地图上的某个地点后，这里会展示该地点的事件明细。</p>
+        <div id="detail-source" class="source-row" style="margin-top:12px"></div>
+        <div id="details" class="details"></div>
+      </div>
+    </aside>
+  </div>
+
+  <script id="dataset" type="application/json">{"meta":{"personId":3767,"generatedAt":"2026-04-10T06:16:27.171Z","html":"person-3767-gis-timeline.html","db":"latest.db"},"person":{"c_personid":3767,"c_name":"Su Shi","c_name_chn":"蘇軾","c_birthyear":1036,"c_deathyear":1101,"c_dynasty_chn":"宋","index_addr_chn":"眉山","index_addr":"Meishan"},"summary":{"displayedEvents":56,"filteredOutUntimed":2,"filteredOutNoCoord":11,"minYear":1036,"maxYear":1101,"dimensions":["索引地","生平地点","入仕地点","任官地点"],"sourceTables":["BIOG_MAIN","BIOG_ADDR_DATA","ENTRY_DATA","POSTED_TO_OFFICE_DATA"]},"events":[{"event_id":"BIOG_MAIN-1","source_table":"BIOG_MAIN","dimension":"索引地","category":"索引地 / 基本地址","c_addr_id":13305,"addr_name_chn":"眉山","addr_name":"Meishan","admin_type":"Xian","x_coord":103.831459,"y_coord":30.050497,"raw_start_year":1036,"raw_end_year":1036,"start_year":1036,"end_year":1036,"year_label":"1036 - 1036","anomaly":"","title":"眉山","extra_title":"","extra_desc":"","note":"","source_title_chn":"","seq":null,"has_coord":true,"has_time":true},{"event_id":"BIOG_ADDR_DATA-3","source_table":"BIOG_ADDR_DATA","dimension":"生平地点","category":"出生地","c_addr_id":13305,"addr_name_chn":"眉山","addr_name":"Meishan","admin_type":"Xian","x_coord":103.831459,"y_coord":30.050497,"raw_start_year":1037,"raw_end_year":null,"start_year":1037,"end_year":1037,"year_label":"1037 - 1037","anomaly":"","title":"眉山","extra_title":"","extra_desc":"","note":"","source_title_chn":"","seq":1,"has_coord":true,"has_time":true},{"event_id":"BIOG_ADDR_DATA-4","source_table":"BIOG_ADDR_DATA","dimension":"生平地点","category":"遊歷或曾經到過","c_addr_id":13370,"addr_name_chn":"雅州","addr_name":"Ya Zhou","admin_type":"Zhou","x_coord":102.98436737,"y_coord":29.985559464,"raw_start_year":1056,"raw_end_year":null,"start_year":1056,"end_year":1056,"year_label":"1056 - 1056","anomaly":"","title":"雅州","extra_title":"","extra_desc":"","note":"","source_title_chn":"","seq":2,"has_coord":true,"has_time":true},{"event_id":"BIOG_ADDR_DATA-5","source_table":"BIOG_ADDR_DATA","dimension":"生平地点","category":"遊歷或曾經到過","c_addr_id":13291,"addr_name_chn":"成都","addr_name":"Chengdu","admin_type":"Xian","x_coord":104.077995,"y_coord":30.650385,"raw_start_year":1056,"raw_end_year":null,"start_year":1056,"end_year":1056,"year_label":"1056 - 1056","anomaly":"","title":"成都","extra_title":"","extra_desc":"","note":"","source_title_chn":"","seq":3,"has_coord":true,"has_time":true},{"event_id":"BIOG_ADDR_DATA-6","source_table":"BIOG_ADDR_DATA","dimension":"生平地点","category":"前住地","c_addr_id":100658,"addr_name_chn":"開封","addr_name":"Kaifeng","admin_type":"Xian","x_coord":114.34333,"y_coord":34.785477,"raw_start_year":1056,"raw_end_year":null,"start_year":1056,"end_year":1056,"year_label":"1056 - 1056","anomaly":"","title":"開封","extra_title":"","extra_desc":"","note":"","source_title_chn":"","seq":4,"has_coord":true,"has_time":true},{"event_id":"BIOG_ADDR_DATA-7","source_table":"BIOG_ADDR_DATA","dimension":"生平地点","category":"前住地","c_addr_id":13305,"addr_name_chn":"眉山","addr_name":"Meishan","admin_type":"Xian","x_coord":103.831459,"y_coord":30.050497,"raw_start_year":1057,"raw_end_year":null,"start_year":1057,"end_year":1057,"year_label":"1057 - 1057","anomaly":"","title":"眉山","extra_title":"","extra_desc":"","note":"","source_title_chn":"","seq":5,"has_coord":true,"has_time":true},{"event_id":"BIOG_ADDR_DATA-8","source_table":"BIOG_ADDR_DATA","dimension":"生平地点","category":"前住地","c_addr_id":100658,"addr_name_chn":"開封","addr_name":"Kaifeng","admin_type":"Xian","x_coord":114.34333,"y_coord":34.785477,"raw_start_year":1059,"raw_end_year":null,"start_year":1059,"end_year":1059,"year_label":"1059 - 1059","anomaly":"","title":"開封","extra_title":"","extra_desc":"","note":"","source_title_chn":"","seq":6,"has_coord":true,"has_time":true},{"event_id":"BIOG_ADDR_DATA-9","source_table":"BIOG_ADDR_DATA","dimension":"生平地点","category":"前住地","c_addr_id":12092,"addr_name_chn":"鳳翔府","addr_name":"Fengxiang Fu","admin_type":"Fu","x_coord":107.38591766,"y_coord":34.522518158,"raw_start_year":1061,"raw_end_year":1065,"start_year":1061,"end_year":1065,"year_label":"1061 - 1065","anomaly":"","title":"鳳翔府","extra_title":"","extra_desc":"","note":"","source_title_chn":"","seq":7,"has_coord":true,"has_time":true},{"event_id":"BIOG_ADDR_DATA-10","source_table":"BIOG_ADDR_DATA","dimension":"生平地点","category":"前住地","c_addr_id":100658,"addr_name_chn":"開封","addr_name":"Kaifeng","admin_type":"Xian","x_coord":114.34333,"y_coord":34.785477,"raw_start_year":1065,"raw_end_year":1066,"start_year":1065,"end_year":1066,"year_label":"1065 - 1066","anomaly":"","title":"開封","extra_title":"","extra_desc":"","note":"","source_title_chn":"","seq":8,"has_coord":true,"has_time":true},{"event_id":"BIOG_ADDR_DATA-11","source_table":"BIOG_ADDR_DATA","dimension":"生平地点","category":"前住地","c_addr_id":13305,"addr_name_chn":"眉山","addr_name":"Meishan","admin_type":"Xian","x_coord":103.831459,"y_coord":30.050497,"raw_start_year":1066,"raw_end_year":1069,"start_year":1066,"end_year":1069,"year_label":"1066 - 1069","anomaly":"","title":"眉山","extra_title":"","extra_desc":"","note":"","source_title_chn":"","seq":9,"has_coord":true,"has_time":true},{"event_id":"BIOG_ADDR_DATA-12","source_table":"BIOG_ADDR_DATA","dimension":"生平地点","category":"前住地","c_addr_id":100658,"addr_name_chn":"開封","addr_name":"Kaifeng","admin_type":"Xian","x_coord":114.34333,"y_coord":34.785477,"raw_start_year":1069,"raw_end_year":1071,"start_year":1069,"end_year":1071,"year_label":"1069 - 1071","anomaly":"","title":"開封","extra_title":"","extra_desc":"","note":"","source_title_chn":"","seq":10,"has_coord":true,"has_time":true},{"event_id":"BIOG_ADDR_DATA-13","source_table":"BIOG_ADDR_DATA","dimension":"生平地点","category":"前住地","c_addr_id":101088,"addr_name_chn":"杭州","addr_name":"Hang Zhou","admin_type":"Zhou","x_coord":120.16862488,"y_coord":30.294124603,"raw_start_year":1071,"raw_end_year":1074,"start_year":1071,"end_year":1074,"year_label":"1071 - 1074","anomaly":"","title":"杭州","extra_title":"","extra_desc":"","note":"","source_title_chn":"","seq":11,"has_coord":true,"has_time":true},{"event_id":"BIOG_ADDR_DATA-14","source_table":"BIOG_ADDR_DATA","dimension":"生平地点","category":"前住地","c_addr_id":11151,"addr_name_chn":"密州","addr_name":"Mi Zhou","admin_type":"Zhou","x_coord":119.40398407,"y_coord":35.993354797,"raw_start_year":1974,"raw_end_year":1076,"start_year":1074,"end_year":1076,"year_label":"1074 - 1076","anomaly":"检测到疑似世纪录入错误，已按人物生卒范围做温和修正","title":"密州","extra_title":"","extra_desc":"","note":"《蘇軾年譜》","source_title_chn":"","seq":12,"has_coord":true,"has_time":true},{"event_id":"BIOG_ADDR_DATA-15","source_table":"BIOG_ADDR_DATA","dimension":"生平地点","category":"前住地","c_addr_id":11242,"addr_name_chn":"徐州","addr_name":"Xu Zhou","admin_type":"Zhou","x_coord":115.657387,"y_coord":39.019436,"raw_start_year":1077,"raw_end_year":1079,"start_year":1077,"end_year":1079,"year_label":"1077 - 1079","anomaly":"","title":"徐州","extra_title":"","extra_desc":"","note":"","source_title_chn":"","seq":13,"has_coord":true,"has_time":true},{"event_id":"BIOG_ADDR_DATA-16","source_table":"BIOG_ADDR_DATA","dimension":"生平地点","category":"前住地","c_addr_id":101092,"addr_name_chn":"湖州","addr_name":"Hu Zhou","admin_type":"Zhou","x_coord":120.09931183,"y_coord":30.864963531,"raw_start_year":1079,"raw_end_year":1079,"start_year":1079,"end_year":1079,"year_label":"1079 - 1079","anomaly":"","title":"湖州","extra_title":"","extra_desc":"","note":"","source_title_chn":"","seq":14,"has_coord":true,"has_time":true},{"event_id":"BIOG_ADDR_DATA-17","source_table":"BIOG_ADDR_DATA","dimension":"生平地点","category":"前住地","c_addr_id":100658,"addr_name_chn":"開封","addr_name":"Kaifeng","admin_type":"Xian","x_coord":114.34333,"y_coord":34.785477,"raw_start_year":1079,"raw_end_year":1079,"start_year":1079,"end_year":1079,"year_label":"1079 - 1079","anomaly":"","title":"開封","extra_title":"","extra_desc":"","note":"","source_title_chn":"","seq":15,"has_coord":true,"has_time":true},{"event_id":"BIOG_ADDR_DATA-18","source_table":"BIOG_ADDR_DATA","dimension":"生平地点","category":"前住地","c_addr_id":12650,"addr_name_chn":"黃州","addr_name":"Huang Zhou","admin_type":"Zhou","x_coord":114.86549377,"y_coord":30.446989059,"raw_start_year":1080,"raw_end_year":1084,"start_year":1080,"end_year":1084,"year_label":"1080 - 1084","anomaly":"","title":"黃州","extra_title":"","extra_desc":"","note":"","source_title_chn":"","seq":16,"has_coord":true,"has_time":true},{"event_id":"BIOG_ADDR_DATA-19","source_table":"BIOG_ADDR_DATA","dimension":"生平地点","category":"前住地","c_addr_id":11520,"addr_name_chn":"汝州","addr_name":"Ru Zhou","admin_type":"Zhou","x_coord":112.83702087,"y_coord":34.161762238,"raw_start_year":1084,"raw_end_year":1085,"start_year":1084,"end_year":1085,"year_label":"1084 - 1085","anomaly":"","title":"汝州","extra_title":"","extra_desc":"","note":"","source_title_chn":"","seq":17,"has_coord":true,"has_time":true},{"event_id":"BIOG_ADDR_DATA-20","source_table":"BIOG_ADDR_DATA","dimension":"生平地点","category":"前住地","c_addr_id":11167,"addr_name_chn":"登州","addr_name":"Deng Zhou","admin_type":"Zhou","x_coord":112.08096313,"y_coord":32.684825897,"raw_start_year":1085,"raw_end_year":1086,"start_year":1085,"end_year":1086,"year_label":"1085 - 1086","anomaly":"","title":"登州","extra_title":"","extra_desc":"","note":"","source_title_chn":"","seq":18,"has_coord":true,"has_time":true},{"event_id":"BIOG_ADDR_DATA-21","source_table":"BIOG_ADDR_DATA","dimension":"生平地点","category":"前住地","c_addr_id":100658,"addr_name_chn":"開封","addr_name":"Kaifeng","admin_type":"Xian","x_coord":114.34333,"y_coord":34.785477,"raw_start_year":1086,"raw_end_year":1089,"start_year":1086,"end_year":1089,"year_label":"1086 - 1089","anomaly":"","title":"開封","extra_title":"","extra_desc":"","note":"","source_title_chn":"","seq":19,"has_coord":true,"has_time":true},{"event_id":"BIOG_ADDR_DATA-22","source_table":"BIOG_ADDR_DATA","dimension":"生平地点","category":"前住地","c_addr_id":101088,"addr_name_chn":"杭州","addr_name":"Hang Zhou","admin_type":"Zhou","x_coord":120.16862488,"y_coord":30.294124603,"raw_start_year":1089,"raw_end_year":1091,"start_year":1089,"end_year":1091,"year_label":"1089 - 1091","anomaly":"","title":"杭州","extra_title":"","extra_desc":"","note":"","source_title_chn":"","seq":20,"has_coord":true,"has_time":true},{"event_id":"BIOG_ADDR_DATA-23","source_table":"BIOG_ADDR_DATA","dimension":"生平地点","category":"前住地","c_addr_id":100658,"addr_name_chn":"開封","addr_name":"Kaifeng","admin_type":"Xian","x_coord":114.34333,"y_coord":34.785477,"raw_start_year":1091,"raw_end_year":1091,"start_year":1091,"end_year":1091,"year_label":"1091 - 1091","anomaly":"","title":"開封","extra_title":"","extra_desc":"","note":"","source_title_chn":"","seq":21,"has_coord":true,"has_time":true},{"event_id":"BIOG_ADDR_DATA-24","source_table":"BIOG_ADDR_DATA","dimension":"生平地点","category":"前住地","c_addr_id":101060,"addr_name_chn":"潁州","addr_name":"Ying Zhou","admin_type":"Zhou","x_coord":115.809013,"y_coord":32.903057,"raw_start_year":1091,"raw_end_year":1092,"start_year":1091,"end_year":1092,"year_label":"1091 - 1092","anomaly":"","title":"潁州","extra_title":"","extra_desc":"","note":"","source_title_chn":"","seq":22,"has_coord":true,"has_time":true},{"event_id":"BIOG_ADDR_DATA-25","source_table":"BIOG_ADDR_DATA","dimension":"生平地点","category":"前住地","c_addr_id":12434,"addr_name_chn":"揚州","addr_name":"Yang Zhou","admin_type":"Zhou","x_coord":119.437187,"y_coord":32.39127,"raw_start_year":1092,"raw_end_year":1093,"start_year":1092,"end_year":1093,"year_label":"1092 - 1093","anomaly":"","title":"揚州","extra_title":"","extra_desc":"","note":"","source_title_chn":"","seq":23,"has_coord":true,"has_time":true},{"event_id":"BIOG_ADDR_DATA-26","source_table":"BIOG_ADDR_DATA","dimension":"生平地点","category":"前住地","c_addr_id":101067,"addr_name_chn":"定州","addr_name":"Ding Zhou","admin_type":"Zhou","x_coord":114.975044,"y_coord":38.520061,"raw_start_year":1093,"raw_end_year":1094,"start_year":1093,"end_year":1094,"year_label":"1093 - 1094","anomaly":"","title":"定州","extra_title":"","extra_desc":"","note":"","source_title_chn":"","seq":24,"has_coord":true,"has_time":true},{"event_id":"BIOG_ADDR_DATA-27","source_table":"BIOG_ADDR_DATA","dimension":"生平地点","category":"前住地","c_addr_id":14073,"addr_name_chn":"惠州","addr_name":"Hui Zhou","admin_type":"Zhou","x_coord":114.414981,"y_coord":23.089792,"raw_start_year":1094,"raw_end_year":1097,"start_year":1094,"end_year":1097,"year_label":"1094 - 1097","anomaly":"","title":"惠州","extra_title":"","extra_desc":"","note":"蘇轍《亡兄子瞻端明墓誌銘》","source_title_chn":"","seq":25,"has_coord":true,"has_time":true},{"event_id":"BIOG_ADDR_DATA-28","source_table":"BIOG_ADDR_DATA","dimension":"生平地点","category":"前住地","c_addr_id":101051,"addr_name_chn":"昌化軍","addr_name":"Changhua Jun","admin_type":"Jun","x_coord":109.341635,"y_coord":19.748701,"raw_start_year":1097,"raw_end_year":1100,"start_year":1097,"end_year":1100,"year_label":"1097 - 1100","anomaly":"","title":"昌化軍","extra_title":"","extra_desc":"","note":"蘇轍《亡兄子瞻端明墓誌銘》","source_title_chn":"","seq":26,"has_coord":true,"has_time":true},{"event_id":"BIOG_ADDR_DATA-29","source_table":"BIOG_ADDR_DATA","dimension":"生平地点","category":"前住地","c_addr_id":101134,"addr_name_chn":"廉州","addr_name":"Lian Zhou","admin_type":"Zhou","x_coord":109.19004,"y_coord":21.670145,"raw_start_year":1100,"raw_end_year":null,"start_year":1100,"end_year":1100,"year_label":"1100 - 1100","anomaly":"","title":"廉州","extra_title":"","extra_desc":"","note":"蘇轍《亡兄子瞻端明墓誌銘》","source_title_chn":"","seq":27,"has_coord":true,"has_time":true},{"event_id":"BIOG_ADDR_DATA-30","source_table":"BIOG_ADDR_DATA","dimension":"生平地点","category":"前住地","c_addr_id":13052,"addr_name_chn":"永州","addr_name":"Yong Zhou","admin_type":"Zhou","x_coord":111.61256409,"y_coord":26.210338593,"raw_start_year":1100,"raw_end_year":1101,"start_year":1100,"end_year":1101,"year_label":"1100 - 1101","anomaly":"","title":"永州","extra_title":"","extra_desc":"","note":"蘇轍《亡兄子瞻端明墓誌銘》","source_title_chn":"","seq":28,"has_coord":true,"has_time":true},{"event_id":"BIOG_ADDR_DATA-31","source_table":"BIOG_ADDR_DATA","dimension":"生平地点","category":"死所","c_addr_id":12721,"addr_name_chn":"常州","addr_name":"Chang Zhou","admin_type":"Zhou","x_coord":119.95230103,"y_coord":31.782783508,"raw_start_year":1101,"raw_end_year":null,"start_year":1101,"end_year":1101,"year_label":"1101 - 1101","anomaly":"","title":"常州","extra_title":"","extra_desc":"","note":"蘇轍《亡兄子瞻端明墓誌銘》","source_title_chn":"","seq":29,"has_coord":true,"has_time":true},{"event_id":"ENTRY_DATA-33","source_table":"ENTRY_DATA","dimension":"入仕地点","category":"入仕 / 科举地点","c_addr_id":100658,"addr_name_chn":"開封","addr_name":"Kaifeng","admin_type":"Xian","x_coord":114.34333,"y_coord":34.785477,"raw_start_year":1057,"raw_end_year":1057,"start_year":1057,"end_year":1057,"year_label":"1057 - 1057","anomaly":"","title":"科舉: 進士(籠統) @ 開封","extra_title":"科舉: 進士(籠統)","extra_desc":"0000000","note":"","source_title_chn":"宋人傳記資料索引(電子版)","seq":1,"has_coord":true,"has_time":true},{"event_id":"ENTRY_DATA-34","source_table":"ENTRY_DATA","dimension":"入仕地点","category":"入仕 / 科举地点","c_addr_id":100658,"addr_name_chn":"開封","addr_name":"Kaifeng","admin_type":"Xian","x_coord":114.34333,"y_coord":34.785477,"raw_start_year":1061,"raw_end_year":1061,"start_year":1061,"end_year":1061,"year_label":"1061 - 1061","anomaly":"","title":"科舉制舉: 賢良方正能直言極諫科 @ 開封","extra_title":"科舉制舉: 賢良方正能直言極諫科","extra_desc":"大理評事、簽書鳳翔府判官","note":"","source_title_chn":"未知","seq":2,"has_coord":true,"has_time":true},{"event_id":"POSTED_TO_OFFICE_DATA-36","source_table":"POSTED_TO_OFFICE_DATA","dimension":"任官地点","category":"差遣","c_addr_id":12092,"addr_name_chn":"鳳翔府","addr_name":"Fengxiang Fu","admin_type":"Fu","x_coord":107.38591766,"y_coord":34.522518158,"raw_start_year":1061,"raw_end_year":1065,"start_year":1061,"end_year":1065,"year_label":"1061 - 1065","anomaly":"","title":"簽書判官廳 @ 鳳翔府","extra_title":"簽書判官廳","extra_desc":"正授","note":"","source_title_chn":"宋人傳記資料索引(電子版)","seq":1,"has_coord":true,"has_time":true},{"event_id":"POSTED_TO_OFFICE_DATA-37","source_table":"POSTED_TO_OFFICE_DATA","dimension":"任官地点","category":"差遣","c_addr_id":100658,"addr_name_chn":"開封","addr_name":"Kaifeng","admin_type":"Xian","x_coord":114.34333,"y_coord":34.785477,"raw_start_year":1065,"raw_end_year":1066,"start_year":1065,"end_year":1066,"year_label":"1065 - 1066","anomaly":"","title":"判登聞鼓院事 @ 開封","extra_title":"判登聞鼓院事","extra_desc":"判","note":"","source_title_chn":"未知","seq":2,"has_coord":true,"has_time":true},{"event_id":"POSTED_TO_OFFICE_DATA-38","source_table":"POSTED_TO_OFFICE_DATA","dimension":"任官地点","category":"未詳","c_addr_id":11027,"addr_name_chn":"開封府","addr_name":"Kaifeng Fu","admin_type":"Fu","x_coord":114.34333,"y_coord":34.785477,"raw_start_year":1069,"raw_end_year":null,"start_year":1069,"end_year":1069,"year_label":"1069 - 1069","anomaly":"","title":"開封府推官 @ 開封府","extra_title":"開封府推官","extra_desc":"攝 / 貶","note":"","source_title_chn":"宋人傳記資料索引(電子版)","seq":3,"has_coord":true,"has_time":true},{"event_id":"POSTED_TO_OFFICE_DATA-39","source_table":"POSTED_TO_OFFICE_DATA","dimension":"任官地点","category":"差遣","c_addr_id":100658,"addr_name_chn":"開封","addr_name":"Kaifeng","admin_type":"Xian","x_coord":114.34333,"y_coord":34.785477,"raw_start_year":1069,"raw_end_year":null,"start_year":1069,"end_year":1069,"year_label":"1069 - 1069","anomaly":"","title":"官告院 @ 開封","extra_title":"官告院","extra_desc":"判","note":"","source_title_chn":"未知","seq":3,"has_coord":true,"has_time":true},{"event_id":"POSTED_TO_OFFICE_DATA-40","source_table":"POSTED_TO_OFFICE_DATA","dimension":"任官地点","category":"差遣","c_addr_id":100658,"addr_name_chn":"開封","addr_name":"Kaifeng","admin_type":"Xian","x_coord":114.34333,"y_coord":34.785477,"raw_start_year":1069,"raw_end_year":null,"start_year":1069,"end_year":1069,"year_label":"1069 - 1069","anomaly":"","title":"判祠部司事 @ 開封","extra_title":"判祠部司事","extra_desc":"判","note":"","source_title_chn":"未知","seq":3,"has_coord":true,"has_time":true},{"event_id":"POSTED_TO_OFFICE_DATA-41","source_table":"POSTED_TO_OFFICE_DATA","dimension":"任官地点","category":"差遣","c_addr_id":101088,"addr_name_chn":"杭州","addr_name":"Hang Zhou","admin_type":"Zhou","x_coord":120.16862488,"y_coord":30.294124603,"raw_start_year":1071,"raw_end_year":1074,"start_year":1071,"end_year":1074,"year_label":"1071 - 1074","anomaly":"","title":"通判某州軍州事 @ 杭州","extra_title":"通判某州軍州事","extra_desc":"","note":"","source_title_chn":"宋人傳記資料索引(電子版)","seq":4,"has_coord":true,"has_time":true},{"event_id":"POSTED_TO_OFFICE_DATA-42","source_table":"POSTED_TO_OFFICE_DATA","dimension":"任官地点","category":"差遣","c_addr_id":11151,"addr_name_chn":"密州","addr_name":"Mi Zhou","admin_type":"Zhou","x_coord":119.40398407,"y_coord":35.993354797,"raw_start_year":1074,"raw_end_year":1076,"start_year":1074,"end_year":1076,"year_label":"1074 - 1076","anomaly":"","title":"知某州軍州事 @ 密州","extra_title":"知某州軍州事","extra_desc":"","note":"《蘇軾年譜》","source_title_chn":"未知","seq":5,"has_coord":true,"has_time":true},{"event_id":"POSTED_TO_OFFICE_DATA-46","source_table":"POSTED_TO_OFFICE_DATA","dimension":"任官地点","category":"未詳","c_addr_id":11921,"addr_name_chn":"河中府","addr_name":"Hezhong Fu","admin_type":"Fu","x_coord":110.332306,"y_coord":34.835129,"raw_start_year":1076,"raw_end_year":1076,"start_year":1076,"end_year":1076,"year_label":"1076 - 1076","anomaly":"","title":"知某府軍府事 @ 河中府","extra_title":"知某府軍府事","extra_desc":"權","note":"LZLMasterFileLineID 2192","source_title_chn":"宋川陝大郡守臣易替考","seq":6,"has_coord":true,"has_time":true},{"event_id":"POSTED_TO_OFFICE_DATA-47","source_table":"POSTED_TO_OFFICE_DATA","dimension":"任官地点","category":"差遣","c_addr_id":11242,"addr_name_chn":"徐州","addr_name":"Xu Zhou","admin_type":"Zhou","x_coord":115.657387,"y_coord":39.019436,"raw_start_year":1077,"raw_end_year":1079,"start_year":1077,"end_year":1079,"year_label":"1077 - 1079","anomaly":"","title":"知某州軍州事 @ 徐州","extra_title":"知某州軍州事","extra_desc":"","note":"","source_title_chn":"未知","seq":6,"has_coord":true,"has_time":true},{"event_id":"POSTED_TO_OFFICE_DATA-48","source_table":"POSTED_TO_OFFICE_DATA","dimension":"任官地点","category":"差遣","c_addr_id":101092,"addr_name_chn":"湖州","addr_name":"Hu Zhou","admin_type":"Zhou","x_coord":120.09931183,"y_coord":30.864963531,"raw_start_year":1079,"raw_end_year":1079,"start_year":1079,"end_year":1079,"year_label":"1079 - 1079","anomaly":"","title":"知某州軍州事 @ 湖州","extra_title":"知某州軍州事","extra_desc":"正授","note":"LZLMasterFileLineID 15782","source_title_chn":"宋兩浙路郡守年表","seq":7,"has_coord":true,"has_time":true},{"event_id":"POSTED_TO_OFFICE_DATA-49","source_table":"POSTED_TO_OFFICE_DATA","dimension":"任官地点","category":"差遣","c_addr_id":12650,"addr_name_chn":"黃州","addr_name":"Huang Zhou","admin_type":"Zhou","x_coord":114.86549377,"y_coord":30.446989059,"raw_start_year":1080,"raw_end_year":1084,"start_year":1080,"end_year":1084,"year_label":"1080 - 1084","anomaly":"","title":"團練副使 @ 黃州","extra_title":"團練副使","extra_desc":"","note":"","source_title_chn":"未知","seq":8,"has_coord":true,"has_time":true},{"event_id":"POSTED_TO_OFFICE_DATA-50","source_table":"POSTED_TO_OFFICE_DATA","dimension":"任官地点","category":"差遣","c_addr_id":11520,"addr_name_chn":"汝州","addr_name":"Ru Zhou","admin_type":"Zhou","x_coord":112.83702087,"y_coord":34.161762238,"raw_start_year":1084,"raw_end_year":1085,"start_year":1084,"end_year":1085,"year_label":"1084 - 1085","anomaly":"","title":"團練副使 @ 汝州","extra_title":"團練副使","extra_desc":"","note":"","source_title_chn":"未知","seq":9,"has_coord":true,"has_time":true},{"event_id":"POSTED_TO_OFFICE_DATA-52","source_table":"POSTED_TO_OFFICE_DATA","dimension":"任官地点","category":"任官记录","c_addr_id":11167,"addr_name_chn":"登州","addr_name":"Deng Zhou","admin_type":"Zhou","x_coord":112.08096313,"y_coord":32.684825897,"raw_start_year":1085,"raw_end_year":1086,"start_year":1085,"end_year":1086,"year_label":"1085 - 1086","anomaly":"","title":"知某州軍州事 @ 登州","extra_title":"知某州軍州事","extra_desc":"","note":"蘇轍《亡兄子瞻端明墓誌銘》","source_title_chn":"宋人傳記資料索引(電子版)","seq":10,"has_coord":true,"has_time":true},{"event_id":"POSTED_TO_OFFICE_DATA-55","source_table":"POSTED_TO_OFFICE_DATA","dimension":"任官地点","category":"任官记录","c_addr_id":100658,"addr_name_chn":"開封","addr_name":"Kaifeng","admin_type":"Xian","x_coord":114.34333,"y_coord":34.785477,"raw_start_year":1086,"raw_end_year":null,"start_year":1086,"end_year":1086,"year_label":"1086 - 1086","anomaly":"","title":"翰林學士、知制誥 @ 開封","extra_title":"翰林學士、知制誥","extra_desc":"正授","note":"","source_title_chn":"宋人傳記資料索引(電子版)","seq":11,"has_coord":true,"has_time":true},{"event_id":"POSTED_TO_OFFICE_DATA-56","source_table":"POSTED_TO_OFFICE_DATA","dimension":"任官地点","category":"職事官","c_addr_id":100658,"addr_name_chn":"開封","addr_name":"Kaifeng","admin_type":"Xian","x_coord":114.34333,"y_coord":34.785477,"raw_start_year":1086,"raw_end_year":null,"start_year":1086,"end_year":1086,"year_label":"1086 - 1086","anomaly":"","title":"中書舍人 @ 開封","extra_title":"中書舍人","extra_desc":"","note":"","source_title_chn":"宋人傳記資料索引","seq":11,"has_coord":true,"has_time":true},{"event_id":"POSTED_TO_OFFICE_DATA-57","source_table":"POSTED_TO_OFFICE_DATA","dimension":"任官地点","category":"未詳","c_addr_id":100658,"addr_name_chn":"開封","addr_name":"Kaifeng","admin_type":"Xian","x_coord":114.34333,"y_coord":34.785477,"raw_start_year":1087,"raw_end_year":null,"start_year":1087,"end_year":1087,"year_label":"1087 - 1087","anomaly":"","title":"翰林侍讀學士 @ 開封","extra_title":"翰林侍讀學士","extra_desc":"正授","note":"","source_title_chn":"宋人傳記資料索引(電子版)","seq":12,"has_coord":true,"has_time":true},{"event_id":"POSTED_TO_OFFICE_DATA-58","source_table":"POSTED_TO_OFFICE_DATA","dimension":"任官地点","category":"未詳","c_addr_id":101088,"addr_name_chn":"杭州","addr_name":"Hang Zhou","admin_type":"Zhou","x_coord":120.16862488,"y_coord":30.294124603,"raw_start_year":1089,"raw_end_year":1091,"start_year":1089,"end_year":1091,"year_label":"1089 - 1091","anomaly":"","title":"知某州軍州事 @ 杭州","extra_title":"知某州軍州事","extra_desc":"正授","note":"LZLMasterFileLineID 13588","source_title_chn":"宋兩浙路郡守年表","seq":13,"has_coord":true,"has_time":true},{"event_id":"POSTED_TO_OFFICE_DATA-60","source_table":"POSTED_TO_OFFICE_DATA","dimension":"任官地点","category":"未詳","c_addr_id":100658,"addr_name_chn":"開封","addr_name":"Kaifeng","admin_type":"Xian","x_coord":114.34333,"y_coord":34.785477,"raw_start_year":1091,"raw_end_year":1091,"start_year":1091,"end_year":1091,"year_label":"1091 - 1091","anomaly":"","title":"翰林學士承旨 @ 開封","extra_title":"翰林學士承旨","extra_desc":"正授","note":"","source_title_chn":"宋人傳記資料索引(電子版)","seq":14,"has_coord":true,"has_time":true},{"event_id":"POSTED_TO_OFFICE_DATA-61","source_table":"POSTED_TO_OFFICE_DATA","dimension":"任官地点","category":"任官记录","c_addr_id":101060,"addr_name_chn":"潁州","addr_name":"Ying Zhou","admin_type":"Zhou","x_coord":115.809013,"y_coord":32.903057,"raw_start_year":1091,"raw_end_year":1092,"start_year":1091,"end_year":1092,"year_label":"1091 - 1092","anomaly":"","title":"知某州軍州事 @ 潁州","extra_title":"知某州軍州事","extra_desc":"","note":"","source_title_chn":"宋人傳記資料索引(電子版)","seq":15,"has_coord":true,"has_time":true},{"event_id":"POSTED_TO_OFFICE_DATA-64","source_table":"POSTED_TO_OFFICE_DATA","dimension":"任官地点","category":"未詳","c_addr_id":12434,"addr_name_chn":"揚州","addr_name":"Yang Zhou","admin_type":"Zhou","x_coord":119.437187,"y_coord":32.39127,"raw_start_year":1092,"raw_end_year":1093,"start_year":1092,"end_year":1093,"year_label":"1092 - 1093","anomaly":"","title":"知某州軍州事 @ 揚州","extra_title":"知某州軍州事","extra_desc":"正授","note":"LZLMasterFileLineID 8301","source_title_chn":"宋兩淮大郡守臣易替考","seq":16,"has_coord":true,"has_time":true},{"event_id":"POSTED_TO_OFFICE_DATA-65","source_table":"POSTED_TO_OFFICE_DATA","dimension":"任官地点","category":"未詳","c_addr_id":101067,"addr_name_chn":"定州","addr_name":"Ding Zhou","admin_type":"Zhou","x_coord":114.975044,"y_coord":38.520061,"raw_start_year":1093,"raw_end_year":1094,"start_year":1093,"end_year":1094,"year_label":"1093 - 1094","anomaly":"","title":"知某州軍州事 @ 定州","extra_title":"知某州軍州事","extra_desc":"正授","note":"","source_title_chn":"宋人傳記資料索引(電子版)","seq":17,"has_coord":true,"has_time":true},{"event_id":"POSTED_TO_OFFICE_DATA-66","source_table":"POSTED_TO_OFFICE_DATA","dimension":"任官地点","category":"任官记录","c_addr_id":101130,"addr_name_chn":"英州","addr_name":"Ying Zhou","admin_type":"Zhou","x_coord":113.402077,"y_coord":24.172937,"raw_start_year":1094,"raw_end_year":null,"start_year":1094,"end_year":1094,"year_label":"1094 - 1094","anomaly":"","title":"知某州軍州事 @ 英州","extra_title":"知某州軍州事","extra_desc":"","note":"","source_title_chn":"未知","seq":18,"has_coord":true,"has_time":true},{"event_id":"POSTED_TO_OFFICE_DATA-67","source_table":"POSTED_TO_OFFICE_DATA","dimension":"任官地点","category":"未詳","c_addr_id":14073,"addr_name_chn":"惠州","addr_name":"Hui Zhou","admin_type":"Zhou","x_coord":114.414981,"y_coord":23.089792,"raw_start_year":1094,"raw_end_year":1097,"start_year":1094,"end_year":1097,"year_label":"1094 - 1097","anomaly":"","title":"節度副使 @ 惠州","extra_title":"節度副使","extra_desc":"降","note":"以寧遠軍節度副使安置惠州","source_title_chn":"宋人傳記資料索引(電子版)","seq":19,"has_coord":true,"has_time":true},{"event_id":"POSTED_TO_OFFICE_DATA-68","source_table":"POSTED_TO_OFFICE_DATA","dimension":"任官地点","category":"任官记录","c_addr_id":14312,"addr_name_chn":"昌化","addr_name":"Changhua","admin_type":"Xian","x_coord":108.70409,"y_coord":19.26767,"raw_start_year":1097,"raw_end_year":1100,"start_year":1097,"end_year":1100,"year_label":"1097 - 1100","anomaly":"","title":"州別駕 @ 昌化","extra_title":"州別駕","extra_desc":"","note":"以瓊州別駕安置昌化","source_title_chn":"未知","seq":20,"has_coord":true,"has_time":true}],"routePoints":[{"event_id":"BIOG_ADDR_DATA-3","c_addr_id":13305,"addr_name_chn":"眉山","start_year":1037,"end_year":1037,"seq":1,"x_coord":103.831459,"y_coord":30.050497,"category":"出生地"},{"event_id":"BIOG_ADDR_DATA-4","c_addr_id":13370,"addr_name_chn":"雅州","start_year":1056,"end_year":1056,"seq":2,"x_coord":102.98436737,"y_coord":29.985559464,"category":"遊歷或曾經到過"},{"event_id":"BIOG_ADDR_DATA-5","c_addr_id":13291,"addr_name_chn":"成都","start_year":1056,"end_year":1056,"seq":3,"x_coord":104.077995,"y_coord":30.650385,"category":"遊歷或曾經到過"},{"event_id":"BIOG_ADDR_DATA-6","c_addr_id":100658,"addr_name_chn":"開封","start_year":1056,"end_year":1056,"seq":4,"x_coord":114.34333,"y_coord":34.785477,"category":"前住地"},{"event_id":"BIOG_ADDR_DATA-7","c_addr_id":13305,"addr_name_chn":"眉山","start_year":1057,"end_year":1057,"seq":5,"x_coord":103.831459,"y_coord":30.050497,"category":"前住地"},{"event_id":"BIOG_ADDR_DATA-8","c_addr_id":100658,"addr_name_chn":"開封","start_year":1059,"end_year":1059,"seq":6,"x_coord":114.34333,"y_coord":34.785477,"category":"前住地"},{"event_id":"BIOG_ADDR_DATA-9","c_addr_id":12092,"addr_name_chn":"鳳翔府","start_year":1061,"end_year":1065,"seq":7,"x_coord":107.38591766,"y_coord":34.522518158,"category":"前住地"},{"event_id":"BIOG_ADDR_DATA-10","c_addr_id":100658,"addr_name_chn":"開封","start_year":1065,"end_year":1066,"seq":8,"x_coord":114.34333,"y_coord":34.785477,"category":"前住地"},{"event_id":"BIOG_ADDR_DATA-11","c_addr_id":13305,"addr_name_chn":"眉山","start_year":1066,"end_year":1069,"seq":9,"x_coord":103.831459,"y_coord":30.050497,"category":"前住地"},{"event_id":"BIOG_ADDR_DATA-12","c_addr_id":100658,"addr_name_chn":"開封","start_year":1069,"end_year":1071,"seq":10,"x_coord":114.34333,"y_coord":34.785477,"category":"前住地"},{"event_id":"BIOG_ADDR_DATA-13","c_addr_id":101088,"addr_name_chn":"杭州","start_year":1071,"end_year":1074,"seq":11,"x_coord":120.16862488,"y_coord":30.294124603,"category":"前住地"},{"event_id":"BIOG_ADDR_DATA-14","c_addr_id":11151,"addr_name_chn":"密州","start_year":1074,"end_year":1076,"seq":12,"x_coord":119.40398407,"y_coord":35.993354797,"category":"前住地"},{"event_id":"BIOG_ADDR_DATA-15","c_addr_id":11242,"addr_name_chn":"徐州","start_year":1077,"end_year":1079,"seq":13,"x_coord":115.657387,"y_coord":39.019436,"category":"前住地"},{"event_id":"BIOG_ADDR_DATA-16","c_addr_id":101092,"addr_name_chn":"湖州","start_year":1079,"end_year":1079,"seq":14,"x_coord":120.09931183,"y_coord":30.864963531,"category":"前住地"},{"event_id":"BIOG_ADDR_DATA-17","c_addr_id":100658,"addr_name_chn":"開封","start_year":1079,"end_year":1079,"seq":15,"x_coord":114.34333,"y_coord":34.785477,"category":"前住地"},{"event_id":"BIOG_ADDR_DATA-18","c_addr_id":12650,"addr_name_chn":"黃州","start_year":1080,"end_year":1084,"seq":16,"x_coord":114.86549377,"y_coord":30.446989059,"category":"前住地"},{"event_id":"BIOG_ADDR_DATA-19","c_addr_id":11520,"addr_name_chn":"汝州","start_year":1084,"end_year":1085,"seq":17,"x_coord":112.83702087,"y_coord":34.161762238,"category":"前住地"},{"event_id":"BIOG_ADDR_DATA-20","c_addr_id":11167,"addr_name_chn":"登州","start_year":1085,"end_year":1086,"seq":18,"x_coord":112.08096313,"y_coord":32.684825897,"category":"前住地"},{"event_id":"BIOG_ADDR_DATA-21","c_addr_id":100658,"addr_name_chn":"開封","start_year":1086,"end_year":1089,"seq":19,"x_coord":114.34333,"y_coord":34.785477,"category":"前住地"},{"event_id":"BIOG_ADDR_DATA-22","c_addr_id":101088,"addr_name_chn":"杭州","start_year":1089,"end_year":1091,"seq":20,"x_coord":120.16862488,"y_coord":30.294124603,"category":"前住地"},{"event_id":"BIOG_ADDR_DATA-23","c_addr_id":100658,"addr_name_chn":"開封","start_year":1091,"end_year":1091,"seq":21,"x_coord":114.34333,"y_coord":34.785477,"category":"前住地"},{"event_id":"BIOG_ADDR_DATA-24","c_addr_id":101060,"addr_name_chn":"潁州","start_year":1091,"end_year":1092,"seq":22,"x_coord":115.809013,"y_coord":32.903057,"category":"前住地"},{"event_id":"BIOG_ADDR_DATA-25","c_addr_id":12434,"addr_name_chn":"揚州","start_year":1092,"end_year":1093,"seq":23,"x_coord":119.437187,"y_coord":32.39127,"category":"前住地"},{"event_id":"BIOG_ADDR_DATA-26","c_addr_id":101067,"addr_name_chn":"定州","start_year":1093,"end_year":1094,"seq":24,"x_coord":114.975044,"y_coord":38.520061,"category":"前住地"},{"event_id":"BIOG_ADDR_DATA-27","c_addr_id":14073,"addr_name_chn":"惠州","start_year":1094,"end_year":1097,"seq":25,"x_coord":114.414981,"y_coord":23.089792,"category":"前住地"},{"event_id":"BIOG_ADDR_DATA-28","c_addr_id":101051,"addr_name_chn":"昌化軍","start_year":1097,"end_year":1100,"seq":26,"x_coord":109.341635,"y_coord":19.748701,"category":"前住地"},{"event_id":"BIOG_ADDR_DATA-29","c_addr_id":101134,"addr_name_chn":"廉州","start_year":1100,"end_year":1100,"seq":27,"x_coord":109.19004,"y_coord":21.670145,"category":"前住地"},{"event_id":"BIOG_ADDR_DATA-30","c_addr_id":13052,"addr_name_chn":"永州","start_year":1100,"end_year":1101,"seq":28,"x_coord":111.61256409,"y_coord":26.210338593,"category":"前住地"},{"event_id":"BIOG_ADDR_DATA-31","c_addr_id":12721,"addr_name_chn":"常州","start_year":1101,"end_year":1101,"seq":29,"x_coord":119.95230103,"y_coord":31.782783508,"category":"死所"}],"timelineCounts":[{"year":1036,"count":1},{"year":1037,"count":1},{"year":1038,"count":0},{"year":1039,"count":0},{"year":1040,"count":0},{"year":1041,"count":0},{"year":1042,"count":0},{"year":1043,"count":0},{"year":1044,"count":0},{"year":1045,"count":0},{"year":1046,"count":0},{"year":1047,"count":0},{"year":1048,"count":0},{"year":1049,"count":0},{"year":1050,"count":0},{"year":1051,"count":0},{"year":1052,"count":0},{"year":1053,"count":0},{"year":1054,"count":0},{"year":1055,"count":0},{"year":1056,"count":3},{"year":1057,"count":2},{"year":1058,"count":0},{"year":1059,"count":1},{"year":1060,"count":0},{"year":1061,"count":3},{"year":1062,"count":2},{"year":1063,"count":2},{"year":1064,"count":2},{"year":1065,"count":4},{"year":1066,"count":3},{"year":1067,"count":1},{"year":1068,"count":1},{"year":1069,"count":5},{"year":1070,"count":1},{"year":1071,"count":3},{"year":1072,"count":2},{"year":1073,"count":2},{"year":1074,"count":4},{"year":1075,"count":2},{"year":1076,"count":3},{"year":1077,"count":2},{"year":1078,"count":2},{"year":1079,"count":5},{"year":1080,"count":2},{"year":1081,"count":2},{"year":1082,"count":2},{"year":1083,"count":2},{"year":1084,"count":4},{"year":1085,"count":4},{"year":1086,"count":5},{"year":1087,"count":2},{"year":1088,"count":1},{"year":1089,"count":3},{"year":1090,"count":2},{"year":1091,"count":6},{"year":1092,"count":4},{"year":1093,"count":4},{"year":1094,"count":5},{"year":1095,"count":2},{"year":1096,"count":2},{"year":1097,"count":4},{"year":1098,"count":2},{"year":1099,"count":2},{"year":1100,"count":4},{"year":1101,"count":2}]}</script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script>
+    const dataset = JSON.parse(document.getElementById('dataset').textContent);
+    const COLORS = { BIOG_MAIN:'#c76a12', BIOG_ADDR_DATA:'#1e6b8f', ENTRY_DATA:'#2d8b57', POSTED_TO_OFFICE_DATA:'#7a52c7', ASSOC_DATA:'#b44b59' };
+    const LABELS = { BIOG_MAIN:'BIOG_MAIN / 索引地', BIOG_ADDR_DATA:'BIOG_ADDR_DATA / 生平地点', ENTRY_DATA:'ENTRY_DATA / 入仕地点', POSTED_TO_OFFICE_DATA:'POSTED_TO_OFFICE_DATA / 任官地点', ASSOC_DATA:'ASSOC_DATA / 关系发生地' };
+    const state = { year:dataset.summary.minYear, previousYear:dataset.summary.minYear, playing:false, mode:'active', dims:new Set(dataset.summary.dimensions), tables:new Set(dataset.summary.sourceTables), selected:null, timer:null };
+    const $ = (id) => document.getElementById(id);
+    const esc = (value) => String(value ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+    const txt = (value, fallback='未详') => String(value ?? '').trim() || fallback;
+    const sourceLabel = (key) => LABELS[key] || key;
+    const matches = (event) => state.dims.has(event.dimension) && state.tables.has(event.source_table);
+    const inTime = (event) => state.mode === 'all' ? true : (state.mode === 'active' ? (event.start_year <= state.year && state.year <= event.end_year) : (event.start_year <= state.year));
+    const eligibleEvents = () => dataset.events.filter(matches);
+    const visibleEvents = () => eligibleEvents().filter(inTime);
+
+    function sortEvents(rows) {
+      return [...rows].sort((a, b) => (a.start_year - b.start_year) || (a.end_year - b.end_year) || ((a.seq ?? 9999) - (b.seq ?? 9999)) || String(a.addr_name_chn).localeCompare(String(b.addr_name_chn), 'zh-CN'));
+    }
+
+    function grouped(rows) {
+      const map = new Map();
+      for (const event of rows) {
+        if (!map.has(event.c_addr_id)) {
+          map.set(event.c_addr_id, { c_addr_id:event.c_addr_id, addr_name_chn:event.addr_name_chn, admin_type:event.admin_type, x_coord:event.x_coord, y_coord:event.y_coord, events:[] });
+        }
+        map.get(event.c_addr_id).events.push(event);
+      }
+      return [...map.values()].sort((a, b) => (b.events.length - a.events.length) || a.addr_name_chn.localeCompare(b.addr_name_chn, 'zh-CN'));
+    }
+
+    function activeEventsForYear() {
+      return eligibleEvents().filter((event) => event.start_year <= state.year && state.year <= event.end_year);
+    }
+
+    function currentStopEvent() {
+      const active = activeEventsForYear();
+      const biog = sortEvents(active.filter((event) => event.source_table === 'BIOG_ADDR_DATA'));
+      if (biog.length) return biog[biog.length - 1];
+      const index = sortEvents(active.filter((event) => event.source_table === 'BIOG_MAIN'));
+      if (index.length) return index[index.length - 1];
+      const fallback = sortEvents(visibleEvents());
+      return fallback.length ? fallback[fallback.length - 1] : null;
+    }
+
+    function currentStopAddrId() {
+      const stop = currentStopEvent();
+      return stop ? stop.c_addr_id : null;
+    }
+
+    function routeSeries() {
+      if (!state.dims.has('生平地点') || !state.tables.has('BIOG_ADDR_DATA')) return [];
+      return dataset.routePoints;
+    }
+
+    function routeState() {
+      const points = routeSeries();
+      if (!$('toggle-route').checked || !points.length) return { all:[], traveled:[], highlight:[], current:null };
+      if (state.mode === 'all') return { all:points, traveled:points, highlight:points.slice(-2), current:points[points.length - 1] || null };
+      const traveled = points.filter((point) => point.start_year <= state.year);
+      const highlight = traveled.length >= 2 ? traveled.slice(-2) : traveled.slice();
+      const activeCurrent = points.find((point) => point.start_year <= state.year && state.year <= point.end_year) || traveled[traveled.length - 1] || null;
+      return { all:points, traveled, highlight, current:activeCurrent };
+    }
+
+    function gradient(group) {
+      const counts = new Map();
+      group.events.forEach((event) => counts.set(event.source_table, (counts.get(event.source_table) || 0) + 1));
+      let degree = 0;
+      const parts = [];
+      for (const [sourceTable, count] of counts.entries()) {
+        const next = degree + (count / group.events.length) * 360;
+        parts.push((COLORS[sourceTable] || '#888') + ' ' + degree + 'deg ' + next + 'deg');
+        degree = next;
+      }
+      return 'conic-gradient(' + parts.join(',') + ')';
+    }
+
+    function markerSize(group) {
+      return Math.min(40, 22 + Math.max(0, group.events.length - 1) * 3);
+    }
+
+    function markerHtml(group, isCurrent) {
+      const size = markerSize(group);
+      const color = COLORS[group.events[0].source_table] || '#666';
+      return '<div class="marker ' + (isCurrent ? 'is-current' : '') + '" style="--s:' + size + 'px;--c:' + color + ';--g:' + gradient(group) + '"><div class="core"></div></div>';
+    }
+
+    function popupHtml(group, isCurrent) {
+      const bySource = [...group.events.reduce((map, event) => {
+        map.set(event.source_table, (map.get(event.source_table) || 0) + 1);
+        return map;
+      }, new Map()).entries()];
+
+      return [
+        '<strong>' + esc(group.addr_name_chn) + (isCurrent ? ' · 当前停留点' : '') + '</strong>',
+        '<div class="small" style="margin-top:6px;color:#5d6775">地点 ID：' + esc(group.c_addr_id) + ' · 行政类型：' + esc(group.admin_type) + '</div>',
+        '<div style="margin-top:8px">当前筛选下共有 <strong>' + group.events.length + '</strong> 条事件</div>',
+        '<div style="margin-top:8px">' +
+          bySource.map(([key, count]) =>
+            '<div class="small" style="margin-top:5px;color:#5d6775"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' +
+            (COLORS[key] || '#888') + ';margin-right:6px"></span>' + esc(sourceLabel(key)) + '：' + count + ' 条</div>'
+          ).join('') +
+        '</div>'
+      ].join('');
+    }
+
+    function setYear(nextYear) {
+      state.previousYear = state.year;
+      state.year = Math.max(dataset.summary.minYear, Math.min(dataset.summary.maxYear, nextYear));
+    }
+
+    function renderStats() {
+      $('hero-name').textContent = dataset.person.c_name_chn + ' 时空 GIS 可视化';
+      $('hero-sub').textContent = txt(dataset.person.c_name) + ' · ' + txt(dataset.person.c_dynasty_chn) + ' · 索引地：' + txt(dataset.person.index_addr_chn);
+      $('stats').innerHTML = [
+        ['展示事件', dataset.summary.displayedEvents],
+        ['时间范围', dataset.summary.minYear + ' - ' + dataset.summary.maxYear],
+        ['已过滤未定年', dataset.summary.filteredOutUntimed],
+        ['已过滤无坐标', dataset.summary.filteredOutNoCoord]
+      ].map(([key, value]) => '<div class="stat"><div class="muted">' + esc(key) + '</div><strong>' + esc(value) + '</strong></div>').join('');
+    }
+
+    function renderFilters() {
+      $('dims').innerHTML = dataset.summary.dimensions.map((dimension) => '<label><input type="checkbox" data-d="' + esc(dimension) + '" checked> ' + esc(dimension) + '</label>').join('');
+      $('tables').innerHTML = dataset.summary.sourceTables.map((table) => '<label><input type="checkbox" data-t="' + esc(table) + '" checked> ' + esc(sourceLabel(table)) + '</label>').join('');
+
+      document.querySelectorAll('[data-d]').forEach((input) => {
+        input.addEventListener('change', () => {
+          if (input.checked) state.dims.add(input.dataset.d);
+          else state.dims.delete(input.dataset.d);
+          rerender(true);
+        });
+      });
+
+      document.querySelectorAll('[data-t]').forEach((input) => {
+        input.addEventListener('change', () => {
+          if (input.checked) state.tables.add(input.dataset.t);
+          else state.tables.delete(input.dataset.t);
+          rerender(true);
+        });
+      });
+
+      document.querySelectorAll('input[name="mode"]').forEach((input) => {
+        input.addEventListener('change', () => {
+          if (input.checked) {
+            state.mode = input.value;
+            rerender(false);
+          }
+        });
+      });
+    }
+
+    function animateYearPill() {
+      const pill = $('year-pill');
+      pill.classList.remove('changed');
+      void pill.offsetWidth;
+      pill.classList.add('changed');
+      setTimeout(() => pill.classList.remove('changed'), 460);
+    }
+
+    function renderTimeline() {
+      const visible = visibleEvents();
+      const route = routeState();
+      const progress = ((state.year - dataset.summary.minYear) / Math.max(1, dataset.summary.maxYear - dataset.summary.minYear)) * 100;
+
+      $('range').min = dataset.summary.minYear;
+      $('range').max = dataset.summary.maxYear;
+      $('range').step = 1;
+      $('range').value = state.year;
+      $('year-pill').textContent = state.year;
+      $('year-summary').textContent = '当前筛选下可见 ' + visible.length + ' 条事件。';
+      $('transition-note').textContent = state.previousYear !== state.year ? '年份过渡：' + state.previousYear + ' → ' + state.year : '拖动时间轴或点击播放，可观看迁徙演化过程。';
+
+      $('progress-fill').style.width = progress + '%';
+      $('progress-pin').style.left = progress + '%';
+      $('timeline-mode').textContent = '时间模式：' + (state.mode === 'active' ? '当前年份有效' : state.mode === 'cumulative' ? '截至当前年份累计' : '显示全部有时间事件');
+      $('timeline-window').textContent = '年份位置：' + state.year + ' / ' + dataset.summary.maxYear;
+      $('timeline-route').textContent = '已亮起路径点：' + route.traveled.length + ' / ' + route.all.length;
+
+      const maxCount = Math.max(...dataset.timelineCounts.map((item) => item.count), 1);
+      $('hist').innerHTML = dataset.timelineCounts.map((item) => {
+        const height = Math.max(6, Math.round(item.count / maxCount * 78));
+        return '<div class="bar ' + (item.year === state.year ? 'active' : '') + '" style="height:' + height + 'px" title="' + item.year + '：' + item.count + ' 条事件" data-year="' + item.year + '"></div>';
+      }).join('');
+
+      document.querySelectorAll('[data-year]').forEach((bar) => {
+        bar.addEventListener('click', () => {
+          setYear(Number(bar.dataset.year));
+          rerender(false);
+        });
+      });
+
+      $('hist-min').textContent = dataset.summary.minYear;
+      $('hist-max').textContent = dataset.summary.maxYear;
+      $('play').textContent = state.playing ? '暂停' : '播放';
+    }
+
+    const map = L.map('map', { zoomControl: true, preferCanvas: true }).setView([34.5, 108], 5);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
+    const markerLayer = L.layerGroup().addTo(map);
+    let routeShadowLayer = null;
+    let routeTraveledLayer = null;
+    let routeHighlightLayer = null;
+    let routeCurrentLayer = null;
+
+    function fitGlobal() {
+      const groups = grouped(eligibleEvents());
+      if (!groups.length) return;
+      if (groups.length === 1) {
+        map.setView([groups[0].y_coord, groups[0].x_coord], 5, { animate: false });
+        return;
+      }
+      map.fitBounds(L.latLngBounds(groups.map((group) => [group.y_coord, group.x_coord])).pad(0.35), { animate: false, maxZoom: 5 });
+    }
+
+    function clearRouteLayers() {
+      [routeShadowLayer, routeTraveledLayer, routeHighlightLayer, routeCurrentLayer].forEach((layer) => {
+        if (layer) map.removeLayer(layer);
+      });
+      routeShadowLayer = null;
+      routeTraveledLayer = null;
+      routeHighlightLayer = null;
+      routeCurrentLayer = null;
+    }
+
+    function renderRoute() {
+      clearRouteLayers();
+      const route = routeState();
+      if (!$('toggle-route').checked || !route.all.length) return;
+
+      if (route.all.length >= 2) {
+        routeShadowLayer = L.polyline(route.all.map((point) => [point.y_coord, point.x_coord]), { color:'#8ca7b3', weight:2, opacity:0.25, dashArray:'4 6' }).addTo(map);
+      }
+      if (route.traveled.length >= 2) {
+        routeTraveledLayer = L.polyline(route.traveled.map((point) => [point.y_coord, point.x_coord]), { color:'#1e6b8f', weight:4, opacity:0.78 }).addTo(map);
+      }
+      if (route.highlight.length >= 2) {
+        routeHighlightLayer = L.polyline(route.highlight.map((point) => [point.y_coord, point.x_coord]), { color:'#c76a12', weight:6, opacity:0.92, lineCap:'round' }).addTo(map);
+      }
+      if (route.current) {
+        routeCurrentLayer = L.circleMarker([route.current.y_coord, route.current.x_coord], { radius:10, color:'#9d3f22', weight:3, fillColor:'#fff', fillOpacity:0.98, opacity:0.9 }).addTo(map);
+      }
+    }
+
+    function renderMap(refit) {
+      markerLayer.clearLayers();
+      renderRoute();
+      const currentAddrId = currentStopAddrId();
+      const groups = grouped(visibleEvents());
+
+      groups.forEach((group) => {
+        const isCurrent = group.c_addr_id === currentAddrId;
+        const size = markerSize(group);
+        const marker = L.marker([group.y_coord, group.x_coord], {
+          icon: L.divIcon({ className:'', html:markerHtml(group, isCurrent), iconSize:[size, size], iconAnchor:[size / 2, size / 2] }),
+          title: group.addr_name_chn
+        });
+        marker.bindPopup(popupHtml(group, isCurrent));
+        marker.on('click', () => {
+          state.selected = group.c_addr_id;
+          renderDetails();
+        });
+        markerLayer.addLayer(marker);
+      });
+
+      if (refit) fitGlobal();
+    }
+
+    function renderJourneyCard() {
+      const stop = currentStopEvent();
+      if (!stop) {
+        $('journey-stop').textContent = '当前未识别到停留点';
+        $('journey-desc').textContent = '请调整筛选条件或切换年份。';
+        return;
+      }
+      const route = routeState();
+      $('journey-stop').textContent = stop.addr_name_chn;
+      $('journey-desc').textContent = stop.year_label + ' · ' + stop.dimension + ' · ' + stop.category + (route.traveled.length > 1 ? ' · 迁徙路径已推进至第 ' + route.traveled.length + ' 个地点节点' : '');
+    }
+
+    function renderEvents() {
+      const currentAddrId = currentStopAddrId();
+      const rows = sortEvents(visibleEvents()).slice(0, 36);
+      $('events').innerHTML = rows.length ? rows.map((event) => {
+        const isCurrent = event.c_addr_id === currentAddrId;
+        return '<div class="event ' + (isCurrent ? 'current-stop' : '') + '">' +
+          '<h4>' + esc(event.title) + (isCurrent ? ' · 当前停留相关' : '') + '</h4>' +
+          '<div class="event-meta">' +
+            '<span class="badge">' + esc(event.dimension) + '</span>' +
+            '<span class="badge">' + esc(event.category) + '</span>' +
+            '<span class="badge">' + esc(event.year_label) + '</span>' +
+          '</div>' +
+          '<div>地点：<strong>' + esc(event.addr_name_chn) + '</strong> · 行政类型：' + esc(event.admin_type) + '</div>' +
+          (event.extra_desc ? '<p style="margin-top:6px" class="muted">补充说明：' + esc(event.extra_desc) + '</p>' : '') +
+          (event.note ? '<p style="margin-top:6px" class="muted">备注：' + esc(event.note) + '</p>' : '') +
+          (event.source_title_chn ? '<p style="margin-top:6px" class="muted">来源：' + esc(event.source_title_chn) + '</p>' : '') +
+          (($('toggle-anomaly').checked && event.anomaly) ? '<p style="margin-top:6px;color:#9d3f22">时间提示：' + esc(event.anomaly) + '</p>' : '') +
+        '</div>';
+      }).join('') : '<div class="empty">当前年份和筛选条件下没有可映射事件。</div>';
+    }
+
+    function renderDetails() {
+      const groups = grouped(visibleEvents());
+      const currentAddrId = currentStopAddrId();
+      const activeGroup = groups.find((group) => group.c_addr_id === state.selected) || groups[0];
+
+      if (!activeGroup) {
+        $('detail-title').textContent = '当前没有可用点位';
+        $('detail-sub').textContent = '请调整时间或筛选条件。';
+        $('detail-source').innerHTML = '';
+        $('details').innerHTML = '';
+        return;
+      }
+
+      state.selected = activeGroup.c_addr_id;
+      $('detail-title').textContent = activeGroup.addr_name_chn + (activeGroup.c_addr_id === currentAddrId ? ' · 当前停留点' : '');
+      $('detail-sub').textContent = '地点 ID ' + activeGroup.c_addr_id + ' · 行政类型 ' + txt(activeGroup.admin_type) + ' · 当前筛选下共有 ' + activeGroup.events.length + ' 条事件';
+
+      const sourceStats = [...activeGroup.events.reduce((map, event) => {
+        map.set(event.source_table, (map.get(event.source_table) || 0) + 1);
+        return map;
+      }, new Map()).entries()];
+
+      $('detail-source').innerHTML = sourceStats.map(([key, count]) =>
+        '<span class="chip"><span class="dot" style="background:' + (COLORS[key] || '#888') + '"></span>' +
+        esc(sourceLabel(key)) + '：' + count + '</span>'
+      ).join('');
+
+      $('details').innerHTML = sortEvents(activeGroup.events).map((event) =>
+        '<div class="detail">' +
+          '<h4>' + esc(event.title) + '</h4>' +
+          '<div class="kv"><b>维度</b><span>' + esc(event.dimension) + '</span></div>' +
+          '<div class="kv"><b>类别</b><span>' + esc(event.category) + '</span></div>' +
+          '<div class="kv"><b>来源表</b><span class="mono">' + esc(sourceLabel(event.source_table)) + '</span></div>' +
+          '<div class="kv"><b>时间</b><span>' + esc(event.year_label) + '</span></div>' +
+          '<div class="kv"><b>原始年份</b><span>' + esc(String(event.raw_start_year ?? '?') + ' / ' + String(event.raw_end_year ?? '?')) + '</span></div>' +
+          '<div class="kv"><b>地点</b><span>' + esc(event.addr_name_chn) + '</span></div>' +
+          '<div class="kv"><b>坐标</b><span class="mono">' + esc(event.x_coord + ', ' + event.y_coord) + '</span></div>' +
+          (event.extra_title ? '<div class="kv"><b>补充标题</b><span>' + esc(event.extra_title) + '</span></div>' : '') +
+          (event.extra_desc ? '<div class="kv"><b>补充说明</b><span>' + esc(event.extra_desc) + '</span></div>' : '') +
+          (event.source_title_chn ? '<div class="kv"><b>来源</b><span>' + esc(event.source_title_chn) + '</span></div>' : '') +
+          (event.note ? '<div class="kv"><b>备注</b><span>' + esc(event.note) + '</span></div>' : '') +
+          (($('toggle-anomaly').checked && event.anomaly) ? '<div class="kv"><b>时间提示</b><span style="color:#9d3f22">' + esc(event.anomaly) + '</span></div>' : '') +
+        '</div>'
+      ).join('');
+    }
+
+    function rerender(refit) {
+      renderTimeline();
+      renderJourneyCard();
+      renderMap(refit);
+      renderEvents();
+      renderDetails();
+      animateYearPill();
+    }
+
+    function stopPlayback() {
+      state.playing = false;
+      if (state.timer) clearInterval(state.timer);
+      state.timer = null;
+      $('play').textContent = '播放';
+    }
+
+    function play() {
+      stopPlayback();
+      state.playing = true;
+      $('play').textContent = '暂停';
+      state.timer = setInterval(() => {
+        setYear(state.year >= dataset.summary.maxYear ? dataset.summary.minYear : state.year + 1);
+        rerender(false);
+      }, 1300);
+    }
+
+    renderStats();
+    renderFilters();
+    rerender(true);
+
+    $('range').addEventListener('input', () => {
+      setYear(Number($('range').value));
+      rerender(false);
+    });
+
+    $('prev').addEventListener('click', () => {
+      setYear(state.year - 1);
+      rerender(false);
+    });
+
+    $('next').addEventListener('click', () => {
+      setYear(state.year + 1);
+      rerender(false);
+    });
+
+    $('play').addEventListener('click', () => {
+      if (state.playing) stopPlayback();
+      else play();
+    });
+
+    $('fit').addEventListener('click', fitGlobal);
+    $('toggle-route').addEventListener('change', () => renderMap(false));
+    $('toggle-anomaly').addEventListener('change', () => {
+      renderEvents();
+      renderDetails();
+    });
+  </script>
+</body>
+</html>

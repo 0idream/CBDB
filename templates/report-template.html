@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CBDB latest.db 结构分析报告</title>
+  <style>
+    :root {
+      --bg: #f4efe7;
+      --panel: rgba(255, 251, 245, 0.94);
+      --text: #1f2630;
+      --muted: #56606e;
+      --line: rgba(53, 67, 89, 0.15);
+      --accent: #b64d1a;
+      --accent-soft: rgba(182, 77, 26, 0.12);
+      --teal: #1d6f74;
+      --olive: #6a7b3b;
+      --gold: #b48927;
+      --shadow: 0 18px 44px rgba(49, 37, 22, 0.12);
+      --radius: 20px;
+      --radius-sm: 14px;
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top right, rgba(180, 137, 39, 0.18), transparent 28%),
+        radial-gradient(circle at left 20%, rgba(29, 111, 116, 0.1), transparent 22%),
+        linear-gradient(180deg, #f7f1e9 0%, var(--bg) 52%, #eee3d2 100%);
+      min-height: 100vh;
+    }
+
+    .shell {
+      width: min(1440px, calc(100vw - 32px));
+      margin: 20px auto 40px;
+      display: grid;
+      grid-template-columns: 300px minmax(0, 1fr);
+      gap: 20px;
+      align-items: start;
+    }
+
+    .sidebar, .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(10px);
+    }
+
+    .sidebar {
+      position: sticky;
+      top: 18px;
+      padding: 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      height: calc(100vh - 36px);
+      overflow: hidden;
+    }
+
+    .sidebar-tools {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .sidebar-stats {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .sidebar-stat {
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(255, 252, 247, 0.92);
+    }
+
+    .sidebar-stat strong {
+      display: block;
+      margin-top: 6px;
+      font-size: 18px;
+    }
+
+    .sidebar-list {
+      min-height: 0;
+      flex: 1;
+      overflow: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding-right: 4px;
+    }
+
+    .sidebar-item {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(255, 252, 247, 0.9);
+      padding: 12px;
+      cursor: pointer;
+      transition: 140ms ease;
+    }
+
+    .sidebar-item:hover, .sidebar-item.active {
+      border-color: rgba(182, 77, 26, 0.3);
+      background: rgba(182, 77, 26, 0.08);
+      transform: translateY(-1px);
+    }
+
+    .sidebar-item h3 {
+      font-size: 14px;
+      line-height: 1.35;
+    }
+
+    .sidebar-item .small {
+      margin-top: 6px;
+    }
+
+    .brand {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .eyebrow {
+      font-size: 12px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    h1, h2, h3, p { margin: 0; }
+    h1 { font-size: 28px; line-height: 1.15; }
+    .sidebar p, .muted { color: var(--muted); line-height: 1.6; }
+
+    .content {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .panel { padding: 24px; }
+
+    .hero {
+      overflow: hidden;
+      position: relative;
+      background:
+        linear-gradient(140deg, rgba(29, 111, 116, 0.08), rgba(182, 77, 26, 0.13)),
+        var(--panel);
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      inset: auto -80px -80px auto;
+      width: 240px;
+      height: 240px;
+      border-radius: 999px;
+      background: radial-gradient(circle, rgba(182, 77, 26, 0.18), transparent 70%);
+      pointer-events: none;
+    }
+
+    .hero-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+      gap: 20px;
+    }
+
+    .stat-grid, .table-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 14px;
+    }
+
+    .stat-card, .mini-card, .table-card, .detail-card, .relation-card {
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      background: rgba(255, 252, 247, 0.92);
+    }
+
+    .stat-card, .mini-card { padding: 16px; }
+    .stat-card strong { display: block; font-size: 24px; margin-top: 6px; }
+    .hero ul { padding-left: 18px; color: var(--muted); line-height: 1.7; margin: 12px 0 0; }
+
+    .section-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 18px;
+      flex-wrap: wrap;
+    }
+
+    .search-wrap {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    input[type="search"] {
+      min-width: 260px;
+      padding: 12px 14px;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.8);
+      font-size: 14px;
+    }
+
+    .chip-row, .badge-row, .meta-row, .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .chip {
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.76);
+      color: var(--muted);
+      padding: 9px 12px;
+      border-radius: 999px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: 140ms ease;
+    }
+
+    .chip.active, .chip:hover {
+      border-color: rgba(29, 111, 116, 0.28);
+      background: rgba(29, 111, 116, 0.1);
+      color: var(--teal);
+    }
+
+    .network-wrap {
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
+      gap: 18px;
+      align-items: start;
+    }
+
+    .network-panel {
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 16px;
+      background: rgba(255, 255, 255, 0.68);
+    }
+
+    #graph {
+      width: 100%;
+      height: 620px;
+      display: block;
+      background: linear-gradient(180deg, rgba(255,255,255,0.82), rgba(244,239,231,0.88));
+      border-radius: 16px;
+    }
+
+    .table-grid { gap: 16px; }
+
+    .table-card {
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      cursor: pointer;
+      transition: 140ms ease;
+    }
+
+    .table-card:hover, .table-card.active {
+      transform: translateY(-2px);
+      border-color: rgba(182, 77, 26, 0.3);
+      box-shadow: 0 14px 30px rgba(51, 34, 16, 0.09);
+    }
+
+    .card-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+    }
+
+    .name-block {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .badge {
+      padding: 5px 9px;
+      border-radius: 999px;
+      font-size: 12px;
+      background: rgba(86, 96, 110, 0.08);
+      color: var(--muted);
+    }
+
+    .badge.role { background: rgba(182, 77, 26, 0.1); color: var(--accent); }
+    .badge.cat { background: rgba(29, 111, 116, 0.1); color: var(--teal); }
+    .badge.dim { background: rgba(106, 123, 59, 0.12); color: var(--olive); }
+
+    .detail-card {
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-height: 620px;
+    }
+
+    .detail-columns {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 14px;
+    }
+
+    .schema-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    .schema-table th, .schema-table td {
+      border-bottom: 1px solid var(--line);
+      padding: 9px 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .relation-card {
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .small {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    code, pre { font-family: "Consolas", "SFMono-Regular", monospace; }
+
+    pre {
+      white-space: pre-wrap;
+      word-break: break-word;
+      margin: 0;
+      border-radius: 14px;
+      padding: 14px;
+      background: rgba(31, 38, 48, 0.04);
+      border: 1px solid var(--line);
+      font-size: 12px;
+      max-height: 220px;
+      overflow: auto;
+    }
+
+    .legend { margin-top: 12px; color: var(--muted); font-size: 12px; gap: 10px 14px; }
+    .legend span::before {
+      content: "";
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 99px;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+
+    .legend .people::before { background: #b64d1a; }
+    .legend .geo::before { background: #1d6f74; }
+    .legend .office::before { background: #6a7b3b; }
+    .legend .text::before { background: #b48927; }
+    .legend .inst::before { background: #7b4f9d; }
+    .legend .event::before { background: #b2415a; }
+    .legend .base::before { background: #7a7f87; }
+
+    @media (max-width: 1180px) {
+      .shell { grid-template-columns: 1fr; }
+      .sidebar { position: static; height: auto; }
+      .hero-grid, .network-wrap { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 720px) {
+      .shell {
+        width: min(100vw - 20px, 100%);
+        margin: 10px auto 24px;
+      }
+      .panel, .sidebar { padding: 18px; }
+      .sidebar-stats { grid-template-columns: 1fr 1fr; }
+      .stat-grid, .table-grid { grid-template-columns: 1fr; }
+      input[type="search"] { min-width: 100%; }
+      #graph { height: 520px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="eyebrow">CBDB Report</div>
+        <h1>latest.db 结构分析</h1>
+        <p id="sidebar-headline"></p>
+      </div>
+      <div class="sidebar-tools">
+        <input id="search-input" type="search" placeholder="搜索表名、字段名、主题域或摘要">
+        <div class="chip-row" id="category-filters"></div>
+        <div class="sidebar-stats" id="sidebar-stats"></div>
+      </div>
+      <div class="mini-card" style="padding: 14px;">
+        <div class="eyebrow">Tables</div>
+        <p class="muted">左侧选择表，右侧查看该表的概要、关系网络和结构细节。</p>
+      </div>
+      <div class="sidebar-list" id="table-list"></div>
+      <div class="mini-card" style="padding: 14px;">
+        <div class="eyebrow">Notes</div>
+        <p class="muted">关系主要基于字段命名、主键模式和桥接表结构推断，不等同于数据库中声明的外键约束。</p>
+      </div>
+    </aside>
+
+    <main class="content">
+      <section class="panel hero" id="overview">
+        <div class="hero-grid">
+          <div>
+            <div class="eyebrow">Selected Table</div>
+            <h2 id="hero-title"></h2>
+            <p class="muted" id="hero-notes" style="margin-top: 10px;"></p>
+            <ul id="hero-bullets"></ul>
+          </div>
+          <div class="stat-grid" id="stat-grid"></div>
+        </div>
+      </section>
+
+      <section class="panel" id="network">
+        <div class="section-head">
+          <div>
+            <div class="eyebrow">Relationships</div>
+            <h2>关系网络</h2>
+            <p class="muted">以当前选中表为中心展示其高置信度关联。点击图中的节点可切换表。</p>
+          </div>
+        </div>
+        <div class="network-wrap">
+          <div class="network-panel">
+            <svg id="graph" viewBox="0 0 1200 620" preserveAspectRatio="xMidYMid meet"></svg>
+            <div class="legend">
+              <span class="people">人物</span>
+              <span class="geo">地理</span>
+              <span class="office">职官</span>
+              <span class="text">文献</span>
+              <span class="inst">机构</span>
+              <span class="event">事件</span>
+              <span class="base">基础代码/其他</span>
+            </div>
+          </div>
+          <div class="detail-card" id="detail">
+            <div>
+              <div class="eyebrow">Selected Table</div>
+              <h2 id="detail-title">选择一张表</h2>
+              <p class="muted" id="detail-summary">点击网络节点或下方表卡片后，这里会显示该表的字段、索引和关系摘要。</p>
+            </div>
+            <div class="meta-row" id="detail-badges"></div>
+            <div class="detail-columns">
+              <div>
+                <h3>字段结构</h3>
+                <div id="detail-schema"></div>
+              </div>
+              <div>
+                <h3>可能关联</h3>
+                <div id="detail-relations" class="detail-columns"></div>
+              </div>
+              <div>
+                <h3>建表 SQL</h3>
+                <pre id="detail-sql">暂无</pre>
+              </div>
+              <div>
+                <h3>示例记录</h3>
+                <pre id="detail-sample">暂无</pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script id="data" type="application/json">__REPORT_DATA__</script>
+  <script>
+    const report = JSON.parse(document.getElementById('data').textContent);
+    const state = {
+      selected: report.tables.find((table) => table.name === 'BIOG_MAIN')?.name || report.overview.centralTables[0] || report.tables[0]?.name || null,
+      query: '',
+      category: '全部',
+    };
+
+    const palette = {
+      '人物': '#b64d1a',
+      '地理': '#1d6f74',
+      '职官': '#6a7b3b',
+      '文献': '#b48927',
+      '机构': '#7b4f9d',
+      '事件': '#b2415a',
+      '基础代码': '#7a7f87',
+      '其他': '#7a7f87',
+    };
+
+    const tableMap = new Map(report.tables.map((table) => [table.name, table]));
+    const relationMap = new Map();
+    for (const rel of report.relationships) {
+      if (!relationMap.has(rel.sourceTable)) relationMap.set(rel.sourceTable, []);
+      if (!relationMap.has(rel.targetTable)) relationMap.set(rel.targetTable, []);
+      relationMap.get(rel.sourceTable).push(rel);
+      relationMap.get(rel.targetTable).push({ ...rel, reverse: true });
+    }
+
+    const el = {
+      sidebarHeadline: document.getElementById('sidebar-headline'),
+      sidebarStats: document.getElementById('sidebar-stats'),
+      heroTitle: document.getElementById('hero-title'),
+      heroNotes: document.getElementById('hero-notes'),
+      heroBullets: document.getElementById('hero-bullets'),
+      statGrid: document.getElementById('stat-grid'),
+      graph: document.getElementById('graph'),
+      detailTitle: document.getElementById('detail-title'),
+      detailSummary: document.getElementById('detail-summary'),
+      detailBadges: document.getElementById('detail-badges'),
+      detailSchema: document.getElementById('detail-schema'),
+      detailRelations: document.getElementById('detail-relations'),
+      detailSql: document.getElementById('detail-sql'),
+      detailSample: document.getElementById('detail-sample'),
+      tableList: document.getElementById('table-list'),
+      searchInput: document.getElementById('search-input'),
+      categoryFilters: document.getElementById('category-filters'),
+    };
+
+    function fmtNumber(num) {
+      return new Intl.NumberFormat('zh-CN').format(num || 0);
+    }
+
+    function fmtConfidence(num) {
+      return Math.round((num || 0) * 100) + '%';
+    }
+
+    function summarizeText(value, max = 112) {
+      if (!value) return '';
+      return value.length > max ? value.slice(0, max - 1) + '…' : value;
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function buildOverview() {
+      el.sidebarHeadline.textContent = report.narrative.headline;
+      const sidebarStats = [
+        ['表', report.overview.tableCount],
+        ['关系', report.overview.inferredRelationshipCount],
+        ['记录', fmtNumber(report.overview.totalRows)],
+        ['空表', report.overview.emptyTables],
+      ];
+      el.sidebarStats.innerHTML = sidebarStats.map(([label, value]) => `
+        <div class="sidebar-stat">
+          <div class="eyebrow">${label}</div>
+          <strong>${value}</strong>
+        </div>
+      `).join('');
+    }
+
+    function tableMatches(table) {
+      const query = state.query.trim().toLowerCase();
+      const categoryOk = state.category === '全部' || table.category === state.category;
+      if (!categoryOk) return false;
+      if (!query) return true;
+      const haystack = [
+        table.name,
+        table.category,
+        table.role,
+        table.summary,
+        ...table.columns.map((col) => col.name),
+      ].join(' ').toLowerCase();
+      return haystack.includes(query);
+    }
+
+    function renderFilters() {
+      const categories = ['全部', ...Object.keys(report.overview.categoryStats)];
+      el.categoryFilters.innerHTML = categories
+        .map((cat) => `<button class="chip ${state.category === cat ? 'active' : ''}" data-category="${cat}">${cat}</button>`)
+        .join('');
+
+      el.categoryFilters.querySelectorAll('[data-category]').forEach((node) => {
+        node.addEventListener('click', () => {
+          state.category = node.dataset.category;
+          renderTableList();
+        });
+      });
+    }
+
+    function renderTableList() {
+      renderFilters();
+      const tables = report.tables
+        .filter(tableMatches)
+        .sort((a, b) => (b.importance - a.importance) || a.name.localeCompare(b.name));
+
+      el.tableList.innerHTML = tables.map((table) => `
+        <article class="sidebar-item ${state.selected === table.name ? 'active' : ''}" data-table="${table.name}">
+          <div class="badge-row">
+            <span class="badge cat">${table.category}</span>
+            <span class="badge role">${table.role}</span>
+          </div>
+          <h3>${table.name}</h3>
+          <div class="small">${summarizeText(table.summary, 72)}</div>
+          <div class="meta-row" style="margin-top:8px;">
+            <span class="badge">Rows ${fmtNumber(table.rowCount || 0)}</span>
+            <span class="badge">Cols ${table.columns.length}</span>
+          </div>
+        </article>
+      `).join('');
+
+      el.tableList.querySelectorAll('[data-table]').forEach((node) => {
+        node.addEventListener('click', () => {
+          state.selected = node.dataset.table;
+          renderTableList();
+          renderHero();
+          renderDetail();
+          renderGraph();
+        });
+      });
+    }
+
+    function renderHero() {
+      const table = tableMap.get(state.selected);
+      if (!table) return;
+      el.heroTitle.textContent = table.name;
+      el.heroNotes.textContent = table.summary;
+      el.heroBullets.innerHTML = [
+        `主题域: ${table.category}`,
+        `角色: ${table.role}`,
+        `主键: ${table.primaryKey.join(', ') || '无'}`,
+        `显示字段: ${(table.displayColumns || []).slice(0, 6).join(', ') || '无'}`,
+      ].map((item) => `<li>${item}</li>`).join('');
+
+      const stats = [
+        ['Rows', fmtNumber(table.rowCount || 0)],
+        ['Columns', table.columns.length],
+        ['PK', table.primaryKey.length || 0],
+        ['Relations', table.relationshipCount || 0],
+      ];
+      el.statGrid.innerHTML = stats.map(([label, value]) => `
+        <div class="stat-card">
+          <div class="eyebrow">${label}</div>
+          <strong>${value}</strong>
+        </div>
+      `).join('');
+    }
+
+    function renderDetail() {
+      const table = tableMap.get(state.selected);
+      if (!table) return;
+      el.detailTitle.textContent = table.name;
+      el.detailSummary.textContent = table.summary;
+      el.detailBadges.innerHTML = [
+        ['主题域', table.category],
+        ['角色', table.role],
+        ['记录数', fmtNumber(table.rowCount || 0)],
+        ['字段数', table.columns.length],
+        ['主键列', table.primaryKey.length || 0],
+        ['关系数', table.relationshipCount || 0],
+      ].map(([k, v]) => `<span class="badge">${k}: ${v}</span>`).join('');
+
+      el.detailSchema.innerHTML = `
+        <table class="schema-table">
+          <thead><tr><th>列名</th><th>类型</th><th>主键</th><th>可空</th><th>默认值</th></tr></thead>
+          <tbody>
+            ${table.columns.map((col) => `
+              <tr>
+                <td><code>${col.name}</code></td>
+                <td>${col.type || ''}</td>
+                <td>${col.pkPosition ? 'PK' + col.pkPosition : ''}</td>
+                <td>${col.nullable ? 'YES' : 'NO'}</td>
+                <td>${col.defaultValue == null ? '' : escapeHtml(String(col.defaultValue))}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+
+      const rels = (relationMap.get(table.name) || []).sort((a, b) => b.confidence - a.confidence).slice(0, 16);
+      el.detailRelations.innerHTML = rels.length
+        ? rels.map((rel) => {
+            const other = rel.reverse ? rel.sourceTable : rel.targetTable;
+            const cols = rel.reverse
+              ? `${rel.targetColumn} ← ${rel.sourceColumn}`
+              : `${rel.sourceColumn} → ${rel.targetColumn}`;
+            return `
+              <div class="relation-card">
+                <div class="badge-row">
+                  <span class="badge role">${rel.reverse ? '被引用' : '引用'}</span>
+                  <span class="badge">${fmtConfidence(rel.confidence)}</span>
+                </div>
+                <strong>${other}</strong>
+                <div class="small">${cols}</div>
+                <div class="small">${rel.rule}</div>
+              </div>
+            `;
+          }).join('')
+        : '<p class="muted">未识别到显著关系。</p>';
+
+      el.detailSql.textContent = table.sql || '暂无';
+      el.detailSample.textContent = table.sample ? JSON.stringify(table.sample, null, 2) : '暂无';
+    }
+
+    function renderGraph() {
+      const svg = el.graph;
+      svg.innerHTML = '';
+
+      const focus = state.selected ? new Set([state.selected]) : new Set();
+      const selectedRels = report.relationships
+        .filter((rel) => rel.sourceTable === state.selected || rel.targetTable === state.selected)
+        .sort((a, b) => b.confidence - a.confidence)
+        .slice(0, 18);
+
+      for (const rel of selectedRels) {
+        focus.add(rel.sourceTable);
+        focus.add(rel.targetTable);
+      }
+      for (const name of report.overview.centralTables.slice(0, 12)) focus.add(name);
+      for (const anchor of report.narrative.anchors || []) focus.add(anchor.name);
+
+      const nodes = report.tables.filter((table) => focus.has(table.name));
+      const categories = [...new Set(nodes.map((node) => node.category))];
+      const positions = new Map();
+      const width = 1200;
+      const height = 620;
+      const colWidth = width / Math.max(categories.length, 1);
+
+      categories.forEach((category, colIdx) => {
+        const colNodes = nodes.filter((node) => node.category === category).sort((a, b) => b.importance - a.importance);
+        const step = height / (colNodes.length + 1);
+        colNodes.forEach((node, rowIdx) => {
+          positions.set(node.name, { x: colWidth * colIdx + colWidth / 2, y: step * (rowIdx + 1) });
+        });
+      });
+
+      categories.forEach((category, i) => {
+        const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        label.setAttribute('x', String(colWidth * i + 22));
+        label.setAttribute('y', '28');
+        label.setAttribute('fill', palette[category] || '#7a7f87');
+        label.setAttribute('font-size', '14');
+        label.setAttribute('font-weight', '700');
+        label.textContent = category;
+        svg.appendChild(label);
+      });
+
+      const edges = report.relationships.filter((rel) => focus.has(rel.sourceTable) && focus.has(rel.targetTable));
+      edges.forEach((rel) => {
+        const a = positions.get(rel.sourceTable);
+        const b = positions.get(rel.targetTable);
+        if (!a || !b) return;
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        const dx = Math.abs(b.x - a.x) * 0.35;
+        const d = `M ${a.x} ${a.y} C ${a.x + dx} ${a.y}, ${b.x - dx} ${b.y}, ${b.x} ${b.y}`;
+        const highlighted = rel.sourceTable === state.selected || rel.targetTable === state.selected;
+        path.setAttribute('d', d);
+        path.setAttribute('fill', 'none');
+        path.setAttribute('stroke', highlighted ? 'rgba(182,77,26,0.72)' : 'rgba(86,96,110,0.24)');
+        path.setAttribute('stroke-width', highlighted ? String(1.8 + rel.confidence * 1.8) : '1.1');
+        path.setAttribute('stroke-linecap', 'round');
+        svg.appendChild(path);
+      });
+
+      nodes.forEach((node) => {
+        const p = positions.get(node.name);
+        if (!p) return;
+        const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        group.style.cursor = 'pointer';
+        group.addEventListener('click', () => {
+          state.selected = node.name;
+          renderTableList();
+          renderHero();
+          renderDetail();
+          renderGraph();
+        });
+
+        const active = node.name === state.selected;
+        const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        rect.setAttribute('x', String(p.x - 76));
+        rect.setAttribute('y', String(p.y - 16));
+        rect.setAttribute('rx', '12');
+        rect.setAttribute('ry', '12');
+        rect.setAttribute('width', '152');
+        rect.setAttribute('height', '32');
+        rect.setAttribute('fill', active ? 'rgba(182,77,26,0.16)' : 'rgba(255,255,255,0.92)');
+        rect.setAttribute('stroke', active ? (palette[node.category] || '#b64d1a') : 'rgba(86,96,110,0.25)');
+        rect.setAttribute('stroke-width', active ? '2' : '1');
+        group.appendChild(rect);
+
+        const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        text.setAttribute('x', String(p.x));
+        text.setAttribute('y', String(p.y + 5));
+        text.setAttribute('text-anchor', 'middle');
+        text.setAttribute('font-size', '11.5');
+        text.setAttribute('font-weight', active ? '700' : '600');
+        text.setAttribute('fill', '#1f2630');
+        text.textContent = node.name.length > 18 ? node.name.slice(0, 16) + '…' : node.name;
+        group.appendChild(text);
+        svg.appendChild(group);
+      });
+    }
+
+    el.searchInput.addEventListener('input', (event) => {
+      state.query = event.target.value;
+      renderTableList();
+    });
+
+    buildOverview();
+    renderTableList();
+    renderHero();
+    renderDetail();
+    renderGraph();
+  </script>
+</body>
+</html>

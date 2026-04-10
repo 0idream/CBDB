@@ -1,0 +1,22 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+Desktop.ini
+.vscode/
+.idea/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Local database
+data/latest.db
+
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.orig

@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>人物专题页 E-R 关系图</title>
+  <style>
+    :root {
+      --bg: #f6efe4;
+      --panel: rgba(255, 252, 247, 0.96);
+      --line: rgba(79, 92, 109, 0.18);
+      --text: #1d2430;
+      --muted: #5c6674;
+      --core: #9f4123;
+      --biz: #235f6c;
+      --code: #857128;
+      --bridge: #5f4f7a;
+      --shadow: 0 18px 42px rgba(38, 29, 18, 0.11);
+      --radius: 20px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font: 14px/1.7 "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(159, 65, 35, 0.08), transparent 28%),
+        radial-gradient(circle at top right, rgba(35, 95, 108, 0.08), transparent 26%),
+        linear-gradient(180deg, #f8f2e9, #f1e9de);
+    }
+    .page {
+      max-width: 1600px;
+      margin: 0 auto;
+      padding: 28px 24px 40px;
+    }
+    .hero,
+    .section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      box-shadow: var(--shadow);
+    }
+    .hero {
+      padding: 28px;
+    }
+    .eyebrow {
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--core);
+      font-weight: 700;
+    }
+    h1, h2, h3, h4, p {
+      margin: 0;
+    }
+    h1 {
+      margin-top: 8px;
+      font-size: clamp(30px, 4vw, 46px);
+      line-height: 1.08;
+    }
+    .hero p {
+      margin-top: 10px;
+      color: var(--muted);
+      max-width: 1050px;
+    }
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 18px;
+    }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.72);
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+    .core-dot { background: var(--core); }
+    .biz-dot { background: var(--biz); }
+    .code-dot { background: var(--code); }
+    .bridge-dot { background: var(--bridge); }
+    .section {
+      margin-top: 20px;
+      padding: 22px;
+    }
+    .section-head {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: end;
+      margin-bottom: 14px;
+    }
+    .section-head p {
+      color: var(--muted);
+      max-width: 980px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 14px;
+      margin-top: 16px;
+    }
+    .note {
+      padding: 14px 16px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.62);
+    }
+    .note h4 {
+      margin-bottom: 6px;
+      font-size: 15px;
+    }
+    .note p {
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .diagram {
+      position: relative;
+      height: 760px;
+      margin-top: 16px;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      overflow: hidden;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,0.74), rgba(248,242,232,0.92)),
+        repeating-linear-gradient(90deg, transparent 0 63px, rgba(0,0,0,0.025) 63px 64px),
+        repeating-linear-gradient(0deg, transparent 0 63px, rgba(0,0,0,0.025) 63px 64px);
+    }
+    .diagram.small {
+      height: 620px;
+    }
+    .diagram svg {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+    .node {
+      position: absolute;
+      transform: translate(-50%, -50%);
+      width: 190px;
+      padding: 12px 14px;
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.95);
+      box-shadow: 0 12px 28px rgba(32, 30, 25, 0.08);
+    }
+    .node.core {
+      border-color: rgba(159, 65, 35, 0.24);
+      background: linear-gradient(180deg, rgba(159, 65, 35, 0.13), rgba(255,255,255,0.96));
+    }
+    .node.biz {
+      border-color: rgba(35, 95, 108, 0.22);
+      background: linear-gradient(180deg, rgba(35, 95, 108, 0.11), rgba(255,255,255,0.95));
+    }
+    .node.code {
+      border-color: rgba(133, 113, 40, 0.22);
+      background: linear-gradient(180deg, rgba(133, 113, 40, 0.12), rgba(255,255,255,0.95));
+    }
+    .node.bridge {
+      border-color: rgba(95, 79, 122, 0.24);
+      background: linear-gradient(180deg, rgba(95, 79, 122, 0.12), rgba(255,255,255,0.95));
+    }
+    .node strong {
+      display: block;
+      font-size: 14px;
+      margin-bottom: 4px;
+      line-height: 1.35;
+    }
+    .node span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+    .edge-label {
+      position: absolute;
+      transform: translate(-50%, -50%);
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.95);
+      border: 1px solid rgba(79, 92, 109, 0.12);
+      color: var(--muted);
+      font-size: 11px;
+      white-space: nowrap;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.05);
+    }
+    .join-table {
+      margin-top: 16px;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: rgba(255,255,255,0.74);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 1080px;
+    }
+    th, td {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+      font-size: 13px;
+    }
+    th {
+      position: sticky;
+      top: 0;
+      background: rgba(245, 239, 230, 0.96);
+      color: var(--muted);
+      font-weight: 700;
+    }
+    .mono {
+      font-family: Consolas, "SFMono-Regular", monospace;
+      font-size: 12px;
+    }
+    @media (max-width: 1100px) {
+      .diagram,
+      .diagram.small {
+        height: 980px;
+      }
+      .node {
+        width: 168px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <section class="hero">
+      <div class="eyebrow">E-R 关系图</div>
+      <h1>人物专题页取数逻辑对应的实体关系图</h1>
+      <p>这张图不是整个 CBDB 全库的总 E-R 图，而是专门对应当前“人物专项报告页面”的取数逻辑。也就是说，它只展示那份页面实际读取、连接和解释过的表，以及它们之间的主键、外键风格字段与桥接关系。</p>
+      <div class="legend">
+        <span class="chip"><span class="dot core-dot"></span>中心实体表</span>
+        <span class="chip"><span class="dot biz-dot"></span>业务事实表</span>
+        <span class="chip"><span class="dot code-dot"></span>代码/解释表</span>
+        <span class="chip"><span class="dot bridge-dot"></span>桥接表</span>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <h3>总览图</h3>
+          <p>以 <span class="mono">BIOG_MAIN</span> 为中心，把人物专题页里实际连接到的主业务表和主解释表放在一张图里，方便先看整体结构。</p>
+        </div>
+      </div>
+      <div id="overview-diagram" class="diagram"></div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <h3>模块一：核心人物档案</h3>
+          <p>对应人物主卡片、主信息面板。这里的重点是 BIOG_MAIN 以及朝代、郡望、索引地、年号、族属、户类这些解释表。</p>
+        </div>
+      </div>
+      <div class="grid">
+        <div class="note">
+          <h4>取数入口</h4>
+          <p>所有模块都从 <span class="mono">BIOG_MAIN.c_personid = ?</span> 起步，这里是人物专题页的主入口表。</p>
+        </div>
+        <div class="note">
+          <h4>索引地逻辑</h4>
+          <p><span class="mono">BIOG_MAIN.c_index_addr_id</span> 连接到 <span class="mono">ADDR_CODES.c_addr_id</span>，取出人物的“索引地/基本地址”。</p>
+        </div>
+        <div class="note">
+          <h4>年号逻辑</h4>
+          <p>人物主表里的生年年号、卒年年号都通过 <span class="mono">NIAN_HAO.c_nianhao_id</span> 解释。</p>
+        </div>
+      </div>
+      <div id="core-diagram" class="diagram small"></div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <h3>模块二：称谓、亲属与人物身份</h3>
+          <p>对应人物页面里的“别名与称谓”“亲属关系”“身份标签”。其中亲属关系和社会关系都会再次回连到另一条人物主表记录。</p>
+        </div>
+      </div>
+      <div id="identity-diagram" class="diagram small"></div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <h3>模块三：地点轨迹与仕宦路径</h3>
+          <p>对应人物页面里的“入仕与科举”“地点轨迹”“任官记录”。这是人物生平路径最复杂的一组关系。</p>
+        </div>
+      </div>
+      <div id="career-diagram" class="diagram"></div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <h3>模块四：社会关系、文本与来源</h3>
+          <p>对应人物页面里的“社会关系与交往网络”“文本与著述”“资料来源”。其中 <span class="mono">ASSOC_DATA</span> 是苏轼那页里数据量最大的表。</p>
+        </div>
+      </div>
+      <div id="assoc-diagram" class="diagram"></div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <h3>关键 Join 规则清单</h3>
+          <p>下面这张表把人物专题页里真正用到的连接关系逐条列出来，便于你核对取数逻辑与可视化图之间是一一对应的。</p>
+        </div>
+      </div>
+      <div class="join-table">
+        <table>
+          <thead>
+            <tr>
+              <th>模块</th>
+              <th>左表</th>
+              <th>连接字段</th>
+              <th>右表</th>
+              <th>用途说明</th>
+            </tr>
+          </thead>
+          <tbody id="join-rows"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const diagrams = {
+      overview: {
+        container: 'overview-diagram',
+        nodes: [
+          { id: 'biog_main', x: 50, y: 50, title: 'BIOG_MAIN', subtitle: '人物主表 / 中心入口', kind: 'core' },
+          { id: 'altname', x: 18, y: 18, title: 'ALTNAME_DATA', subtitle: '字、号、谥号', kind: 'biz' },
+          { id: 'kin', x: 18, y: 34, title: 'KIN_DATA', subtitle: '亲属关系', kind: 'biz' },
+          { id: 'status', x: 18, y: 50, title: 'STATUS_DATA', subtitle: '身份标签', kind: 'biz' },
+          { id: 'entry', x: 18, y: 66, title: 'ENTRY_DATA', subtitle: '入仕与科举', kind: 'biz' },
+          { id: 'addr_data', x: 18, y: 82, title: 'BIOG_ADDR_DATA', subtitle: '生平地点', kind: 'biz' },
+          { id: 'office_data', x: 82, y: 20, title: 'POSTED_TO_OFFICE_DATA', subtitle: '任官记录', kind: 'biz' },
+          { id: 'assoc_data', x: 82, y: 40, title: 'ASSOC_DATA', subtitle: '社会关系 / 文本交往', kind: 'biz' },
+          { id: 'text_data', x: 82, y: 60, title: 'BIOG_TEXT_DATA', subtitle: '文本关系', kind: 'biz' },
+          { id: 'source_data', x: 82, y: 80, title: 'BIOG_SOURCE_DATA', subtitle: '资料来源', kind: 'biz' },
+          { id: 'addr_codes', x: 50, y: 12, title: 'ADDR_CODES', subtitle: '地点主表', kind: 'code' },
+          { id: 'text_codes', x: 50, y: 88, title: 'TEXT_CODES', subtitle: '文献 / 文本主表', kind: 'code' }
+        ],
+        edges: [
+          { from: 'biog_main', to: 'altname', label: 'c_personid' },
+          { from: 'biog_main', to: 'kin', label: 'c_personid' },
+          { from: 'biog_main', to: 'status', label: 'c_personid' },
+          { from: 'biog_main', to: 'entry', label: 'c_personid' },
+          { from: 'biog_main', to: 'addr_data', label: 'c_personid' },
+          { from: 'biog_main', to: 'office_data', label: 'c_personid' },
+          { from: 'biog_main', to: 'assoc_data', label: 'c_personid' },
+          { from: 'biog_main', to: 'text_data', label: 'c_personid' },
+          { from: 'biog_main', to: 'source_data', label: 'c_personid' },
+          { from: 'biog_main', to: 'addr_codes', label: 'c_index_addr_id = c_addr_id' },
+          { from: 'entry', to: 'addr_codes', label: 'c_entry_addr_id' },
+          { from: 'addr_data', to: 'addr_codes', label: 'c_addr_id' },
+          { from: 'office_data', to: 'addr_codes', label: '经 POSTED_TO_ADDR_DATA' },
+          { from: 'altname', to: 'text_codes', label: 'c_source = c_textid' },
+          { from: 'kin', to: 'text_codes', label: 'c_source = c_textid' },
+          { from: 'status', to: 'text_codes', label: 'c_source = c_textid' },
+          { from: 'entry', to: 'text_codes', label: 'c_source = c_textid' },
+          { from: 'addr_data', to: 'text_codes', label: 'c_source = c_textid' },
+          { from: 'office_data', to: 'text_codes', label: 'c_source = c_textid' },
+          { from: 'assoc_data', to: 'text_codes', label: 'c_source = c_textid' },
+          { from: 'text_data', to: 'text_codes', label: 'c_textid / c_source' },
+          { from: 'source_data', to: 'text_codes', label: 'c_textid' }
+        ]
+      },
+      core: {
+        container: 'core-diagram',
+        nodes: [
+          { id: 'bm', x: 50, y: 50, title: 'BIOG_MAIN', subtitle: '人物主表', kind: 'core' },
+          { id: 'dy', x: 18, y: 20, title: 'DYNASTIES', subtitle: '朝代表', kind: 'code' },
+          { id: 'iy', x: 18, y: 40, title: 'INDEXYEAR_TYPE_CODES', subtitle: '索引年份类型', kind: 'code' },
+          { id: 'ch', x: 18, y: 60, title: 'CHORONYM_CODES', subtitle: '郡望代码表', kind: 'code' },
+          { id: 'hs', x: 18, y: 80, title: 'HOUSEHOLD_STATUS_CODES', subtitle: '户类代码表', kind: 'code' },
+          { id: 'et', x: 82, y: 20, title: 'ETHNICITY_TRIBE_CODES', subtitle: '族属代码表', kind: 'code' },
+          { id: 'ac', x: 82, y: 40, title: 'ADDR_CODES', subtitle: '索引地 / 地点主表', kind: 'code' },
+          { id: 'bac', x: 82, y: 60, title: 'BIOG_ADDR_CODES', subtitle: '地址类型代码表', kind: 'code' },
+          { id: 'nh', x: 82, y: 80, title: 'NIAN_HAO', subtitle: '年号表（生年/卒年）', kind: 'code' }
+        ],
+        edges: [
+          { from: 'bm', to: 'dy', label: 'c_dy = c_dy' },
+          { from: 'bm', to: 'iy', label: 'c_index_year_type_code' },
+          { from: 'bm', to: 'ch', label: 'c_choronym_code' },
+          { from: 'bm', to: 'hs', label: 'c_household_status_code' },
+          { from: 'bm', to: 'et', label: 'c_ethnicity_code' },
+          { from: 'bm', to: 'ac', label: 'c_index_addr_id = c_addr_id' },
+          { from: 'bm', to: 'bac', label: 'c_index_addr_type_code = c_addr_type' },
+          { from: 'bm', to: 'nh', label: 'c_by_nh_code / c_dy_nh_code' }
+        ]
+      },
+      identity: {
+        container: 'identity-diagram',
+        nodes: [
+          { id: 'bm', x: 50, y: 50, title: 'BIOG_MAIN', subtitle: '当前人物', kind: 'core' },
+          { id: 'alt', x: 20, y: 24, title: 'ALTNAME_DATA', subtitle: '别名、字、号、谥号', kind: 'biz' },
+          { id: 'altc', x: 20, y: 48, title: 'ALTNAME_CODES', subtitle: '称谓类型', kind: 'code' },
+          { id: 'kin', x: 20, y: 76, title: 'KIN_DATA', subtitle: '亲属关系事实表', kind: 'biz' },
+          { id: 'kinc', x: 50, y: 86, title: 'KINSHIP_CODES', subtitle: '亲属关系代码表', kind: 'code' },
+          { id: 'kinbm', x: 82, y: 76, title: 'BIOG_MAIN', subtitle: '亲属目标人物', kind: 'core' },
+          { id: 'status', x: 82, y: 28, title: 'STATUS_DATA', subtitle: '身份标签事实表', kind: 'biz' },
+          { id: 'statusc', x: 82, y: 52, title: 'STATUS_CODES', subtitle: '身份标签代码表', kind: 'code' },
+          { id: 'text', x: 50, y: 16, title: 'TEXT_CODES', subtitle: '来源文献主表', kind: 'code' }
+        ],
+        edges: [
+          { from: 'bm', to: 'alt', label: 'c_personid' },
+          { from: 'alt', to: 'altc', label: 'c_alt_name_type_code' },
+          { from: 'alt', to: 'text', label: 'c_source = c_textid' },
+          { from: 'bm', to: 'kin', label: 'c_personid' },
+          { from: 'kin', to: 'kinc', label: 'c_kin_code = c_kincode' },
+          { from: 'kin', to: 'kinbm', label: 'c_kin_id = c_personid' },
+          { from: 'kin', to: 'text', label: 'c_source = c_textid' },
+          { from: 'bm', to: 'status', label: 'c_personid' },
+          { from: 'status', to: 'statusc', label: 'c_status_code' },
+          { from: 'status', to: 'text', label: 'c_source = c_textid' }
+        ]
+      },
+      career: {
+        container: 'career-diagram',
+        nodes: [
+          { id: 'bm', x: 50, y: 50, title: 'BIOG_MAIN', subtitle: '当前人物', kind: 'core' },
+          { id: 'entry', x: 16, y: 20, title: 'ENTRY_DATA', subtitle: '入仕与科举事实表', kind: 'biz' },
+          { id: 'entryc', x: 16, y: 38, title: 'ENTRY_CODES', subtitle: '入仕方式代码表', kind: 'code' },
+          { id: 'psc', x: 16, y: 56, title: 'PARENTAL_STATUS_CODES', subtitle: '父母状态代码表', kind: 'code' },
+          { id: 'nh', x: 16, y: 74, title: 'NIAN_HAO', subtitle: '入仕年号 / 时间解释', kind: 'code' },
+          { id: 'addr', x: 50, y: 16, title: 'ADDR_CODES', subtitle: '地点主表', kind: 'code' },
+          { id: 'baddr', x: 50, y: 84, title: 'BIOG_ADDR_CODES', subtitle: '人物地点类型代码表', kind: 'code' },
+          { id: 'bioa', x: 84, y: 20, title: 'BIOG_ADDR_DATA', subtitle: '人物生平地点事实表', kind: 'biz' },
+          { id: 'pto', x: 84, y: 42, title: 'POSTED_TO_OFFICE_DATA', subtitle: '任官事实表', kind: 'biz' },
+          { id: 'pta', x: 84, y: 62, title: 'POSTED_TO_ADDR_DATA', subtitle: '任官-地点桥接表', kind: 'bridge' },
+          { id: 'post', x: 84, y: 82, title: 'POSTING_DATA', subtitle: '任职事件桥接表', kind: 'bridge' },
+          { id: 'office', x: 50, y: 32, title: 'OFFICE_CODES', subtitle: '官职主表', kind: 'code' },
+          { id: 'appt', x: 50, y: 48, title: 'APPOINTMENT_CODES', subtitle: '任命方式代码表', kind: 'code' },
+          { id: 'apptt', x: 50, y: 60, title: 'APPOINTMENT_TYPES', subtitle: '任命类型代码表', kind: 'code' },
+          { id: 'assume', x: 50, y: 72, title: 'ASSUME_OFFICE_CODES', subtitle: '是否赴任代码表', kind: 'code' },
+          { id: 'cat', x: 50, y: 44, title: 'OFFICE_CATEGORIES', subtitle: '官职类别表', kind: 'code' },
+          { id: 'text', x: 16, y: 90, title: 'TEXT_CODES', subtitle: '来源文献主表', kind: 'code' }
+        ],
+        edges: [
+          { from: 'bm', to: 'entry', label: 'c_personid' },
+          { from: 'entry', to: 'entryc', label: 'c_entry_code' },
+          { from: 'entry', to: 'psc', label: 'c_parental_status_code' },
+          { from: 'entry', to: 'nh', label: 'c_entry_nh_id = c_nianhao_id' },
+          { from: 'entry', to: 'addr', label: 'c_entry_addr_id = c_addr_id' },
+          { from: 'entry', to: 'text', label: 'c_source = c_textid' },
+
+          { from: 'bm', to: 'bioa', label: 'c_personid' },
+          { from: 'bioa', to: 'addr', label: 'c_addr_id = c_addr_id' },
+          { from: 'bioa', to: 'baddr', label: 'c_addr_type = c_addr_type' },
+          { from: 'bioa', to: 'text', label: 'c_source = c_textid' },
+
+          { from: 'bm', to: 'pto', label: 'c_personid' },
+          { from: 'pto', to: 'office', label: 'c_office_id' },
+          { from: 'pto', to: 'appt', label: 'c_appt_code' },
+          { from: 'pto', to: 'apptt', label: 'c_appt_type_code' },
+          { from: 'pto', to: 'assume', label: 'c_assume_office_code' },
+          { from: 'pto', to: 'cat', label: 'c_office_category_id' },
+          { from: 'pto', to: 'pta', label: 'posting_id + personid + office_id' },
+          { from: 'pta', to: 'addr', label: 'c_addr_id' },
+          { from: 'bm', to: 'post', label: 'c_personid' },
+          { from: 'pto', to: 'post', label: '共享 c_posting_id' },
+          { from: 'pto', to: 'text', label: 'c_source = c_textid' }
+        ]
+      },
+      assoc: {
+        container: 'assoc-diagram',
+        nodes: [
+          { id: 'bm', x: 50, y: 50, title: 'BIOG_MAIN', subtitle: '当前人物', kind: 'core' },
+          { id: 'assoc', x: 18, y: 30, title: 'ASSOC_DATA', subtitle: '社会关系事实表', kind: 'biz' },
+          { id: 'assocc', x: 18, y: 50, title: 'ASSOC_CODES', subtitle: '关系类型代码表', kind: 'code' },
+          { id: 'assocrel', x: 18, y: 70, title: 'ASSOC_CODE_TYPE_REL', subtitle: '关系类型桥接表', kind: 'bridge' },
+          { id: 'assoct', x: 36, y: 84, title: 'ASSOC_TYPES', subtitle: '关系大类表', kind: 'code' },
+          { id: 'assocbm', x: 82, y: 30, title: 'BIOG_MAIN', subtitle: '关联目标人物', kind: 'core' },
+          { id: 'textcodes', x: 82, y: 50, title: 'TEXT_CODES', subtitle: '来源 / 文本主表', kind: 'code' },
+          { id: 'textdata', x: 82, y: 70, title: 'BIOG_TEXT_DATA', subtitle: '人物-文本关系事实表', kind: 'biz' },
+          { id: 'textrole', x: 82, y: 86, title: 'TEXT_ROLE_CODES', subtitle: '文本角色代码表', kind: 'code' },
+          { id: 'source', x: 50, y: 16, title: 'BIOG_SOURCE_DATA', subtitle: '人物资料来源', kind: 'biz' }
+        ],
+        edges: [
+          { from: 'bm', to: 'assoc', label: 'c_personid' },
+          { from: 'assoc', to: 'assocc', label: 'c_assoc_code' },
+          { from: 'assocc', to: 'assocrel', label: 'c_assoc_code' },
+          { from: 'assocrel', to: 'assoct', label: 'c_assoc_type_code' },
+          { from: 'assoc', to: 'assocbm', label: 'c_assoc_id = c_personid' },
+          { from: 'assoc', to: 'textcodes', label: 'c_source = c_textid' },
+          { from: 'bm', to: 'textdata', label: 'c_personid' },
+          { from: 'textdata', to: 'textcodes', label: 'c_textid / c_source' },
+          { from: 'textdata', to: 'textrole', label: 'c_role_id' },
+          { from: 'bm', to: 'source', label: 'c_personid' },
+          { from: 'source', to: 'textcodes', label: 'c_textid' }
+        ]
+      }
+    };
+
+    const joinRows = [
+      ['核心档案', 'BIOG_MAIN', 'c_dy = c_dy', 'DYNASTIES', '解释人物所属朝代'],
+      ['核心档案', 'BIOG_MAIN', 'c_index_year_type_code', 'INDEXYEAR_TYPE_CODES', '解释索引年份的含义'],
+      ['核心档案', 'BIOG_MAIN', 'c_choronym_code', 'CHORONYM_CODES', '解释人物郡望'],
+      ['核心档案', 'BIOG_MAIN', 'c_household_status_code', 'HOUSEHOLD_STATUS_CODES', '解释户类/户籍身份'],
+      ['核心档案', 'BIOG_MAIN', 'c_ethnicity_code', 'ETHNICITY_TRIBE_CODES', '解释人物族属'],
+      ['核心档案', 'BIOG_MAIN', 'c_index_addr_id = c_addr_id', 'ADDR_CODES', '解释人物索引地'],
+      ['核心档案', 'BIOG_MAIN', 'c_index_addr_type_code = c_addr_type', 'BIOG_ADDR_CODES', '解释索引地类型'],
+      ['核心档案', 'BIOG_MAIN', 'c_by_nh_code / c_dy_nh_code', 'NIAN_HAO', '解释出生和死亡所对应年号'],
+
+      ['称谓/亲属', 'BIOG_MAIN', 'c_personid', 'ALTNAME_DATA', '取出字、号、谥号等别名'],
+      ['称谓/亲属', 'ALTNAME_DATA', 'c_alt_name_type_code', 'ALTNAME_CODES', '解释别名类型'],
+      ['称谓/亲属', 'ALTNAME_DATA', 'c_source = c_textid', 'TEXT_CODES', '解释别名记录来源'],
+      ['称谓/亲属', 'BIOG_MAIN', 'c_personid', 'KIN_DATA', '取出亲属关系'],
+      ['称谓/亲属', 'KIN_DATA', 'c_kin_code = c_kincode', 'KINSHIP_CODES', '解释亲属关系类型'],
+      ['称谓/亲属', 'KIN_DATA', 'c_kin_id = c_personid', 'BIOG_MAIN', '回连到亲属本人的人物主表'],
+      ['称谓/亲属', 'BIOG_MAIN', 'c_personid', 'STATUS_DATA', '取出人物身份标签'],
+      ['称谓/亲属', 'STATUS_DATA', 'c_status_code', 'STATUS_CODES', '解释身份标签名称'],
+
+      ['仕途/地点', 'BIOG_MAIN', 'c_personid', 'ENTRY_DATA', '取出入仕与科举记录'],
+      ['仕途/地点', 'ENTRY_DATA', 'c_entry_code', 'ENTRY_CODES', '解释入仕方式'],
+      ['仕途/地点', 'ENTRY_DATA', 'c_entry_addr_id = c_addr_id', 'ADDR_CODES', '解释入仕地点'],
+      ['仕途/地点', 'ENTRY_DATA', 'c_parental_status_code', 'PARENTAL_STATUS_CODES', '解释父母状态'],
+      ['仕途/地点', 'ENTRY_DATA', 'c_entry_nh_id = c_nianhao_id', 'NIAN_HAO', '解释入仕时年号'],
+      ['仕途/地点', 'BIOG_MAIN', 'c_personid', 'BIOG_ADDR_DATA', '取出生平相关地点'],
+      ['仕途/地点', 'BIOG_ADDR_DATA', 'c_addr_id = c_addr_id', 'ADDR_CODES', '解释地点名称和行政类型'],
+      ['仕途/地点', 'BIOG_ADDR_DATA', 'c_addr_type = c_addr_type', 'BIOG_ADDR_CODES', '解释地点类别，如出生地、葬地'],
+      ['仕途/地点', 'BIOG_MAIN', 'c_personid', 'POSTED_TO_OFFICE_DATA', '取出任官记录'],
+      ['仕途/地点', 'POSTED_TO_OFFICE_DATA', 'c_office_id', 'OFFICE_CODES', '解释官职名称'],
+      ['仕途/地点', 'POSTED_TO_OFFICE_DATA', 'c_appt_code', 'APPOINTMENT_CODES', '解释任命方式，如正授、权、守'],
+      ['仕途/地点', 'POSTED_TO_OFFICE_DATA', 'c_appt_type_code', 'APPOINTMENT_TYPES', '解释任命类型，如授任、署理'],
+      ['仕途/地点', 'POSTED_TO_OFFICE_DATA', 'c_assume_office_code', 'ASSUME_OFFICE_CODES', '解释是否实际赴任'],
+      ['仕途/地点', 'POSTED_TO_OFFICE_DATA', 'c_office_category_id', 'OFFICE_CATEGORIES', '解释官职类别'],
+      ['仕途/地点', 'POSTED_TO_OFFICE_DATA', 'posting_id + personid + office_id', 'POSTED_TO_ADDR_DATA', '桥接任官记录与地点'],
+      ['仕途/地点', 'POSTED_TO_ADDR_DATA', 'c_addr_id', 'ADDR_CODES', '解释任官地点'],
+      ['仕途/地点', 'POSTED_TO_OFFICE_DATA', '共享 c_posting_id', 'POSTING_DATA', '保留任职事件桥接层'],
+
+      ['关系/文本', 'BIOG_MAIN', 'c_personid', 'ASSOC_DATA', '取出社会关系与文本交往记录'],
+      ['关系/文本', 'ASSOC_DATA', 'c_assoc_code', 'ASSOC_CODES', '解释关系类型'],
+      ['关系/文本', 'ASSOC_CODES', 'c_assoc_code', 'ASSOC_CODE_TYPE_REL', '桥接到关系大类'],
+      ['关系/文本', 'ASSOC_CODE_TYPE_REL', 'c_assoc_type_code', 'ASSOC_TYPES', '解释关系大类，如书札文字、朋友关系'],
+      ['关系/文本', 'ASSOC_DATA', 'c_assoc_id = c_personid', 'BIOG_MAIN', '回连到关联目标人物'],
+      ['关系/文本', 'ASSOC_DATA', 'c_source = c_textid', 'TEXT_CODES', '解释关系记录来源文献'],
+      ['关系/文本', 'BIOG_MAIN', 'c_personid', 'BIOG_TEXT_DATA', '取出人物与文本的关系'],
+      ['关系/文本', 'BIOG_TEXT_DATA', 'c_textid / c_source', 'TEXT_CODES', '解释文本本体与来源'],
+      ['关系/文本', 'BIOG_TEXT_DATA', 'c_role_id', 'TEXT_ROLE_CODES', '解释人物在文本中的角色'],
+      ['关系/文本', 'BIOG_MAIN', 'c_personid', 'BIOG_SOURCE_DATA', '取出人物资料来源'],
+      ['关系/文本', 'BIOG_SOURCE_DATA', 'c_textid', 'TEXT_CODES', '解释来源文献名称']
+    ];
+
+    function renderDiagram(def) {
+      const container = document.getElementById(def.container);
+      const nodeMap = new Map(def.nodes.map((node) => [node.id, node]));
+
+      const lines = def.edges.map((edge) => {
+        const a = nodeMap.get(edge.from);
+        const b = nodeMap.get(edge.to);
+        return {
+          x1: a.x,
+          y1: a.y,
+          x2: b.x,
+          y2: b.y,
+          mx: (a.x + b.x) / 2,
+          my: (a.y + b.y) / 2,
+          label: edge.label
+        };
+      });
+
+      container.innerHTML =
+        '<svg viewBox="0 0 100 100" preserveAspectRatio="none">' +
+          lines.map((line) =>
+            '<line x1="' + line.x1 + '" y1="' + line.y1 + '" x2="' + line.x2 + '" y2="' + line.y2 + '" stroke="rgba(92,102,116,0.38)" stroke-width="0.24" />'
+          ).join('') +
+        '</svg>' +
+        lines.map((line) =>
+          '<div class="edge-label" style="left:' + line.mx + '%; top:' + line.my + '%;">' + line.label + '</div>'
+        ).join('') +
+        def.nodes.map((node) =>
+          '<div class="node ' + node.kind + '" style="left:' + node.x + '%; top:' + node.y + '%;">' +
+            '<strong>' + node.title + '</strong>' +
+            '<span>' + node.subtitle + '</span>' +
+          '</div>'
+        ).join('');
+    }
+
+    for (const def of Object.values(diagrams)) {
+      renderDiagram(def);
+    }
+
+    document.getElementById('join-rows').innerHTML = joinRows.map((row) =>
+      '<tr>' +
+        '<td>' + row[0] + '</td>' +
+        '<td><span class="mono">' + row[1] + '</span></td>' +
+        '<td><span class="mono">' + row[2] + '</span></td>' +
+        '<td><span class="mono">' + row[3] + '</span></td>' +
+        '<td>' + row[4] + '</td>' +
+      '</tr>'
+    ).join('');
+  </script>
+</body>
+</html>
