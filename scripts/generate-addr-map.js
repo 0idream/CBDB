@@ -142,6 +142,22 @@ function adminTypeLabel(value) {
   return ADMIN_TYPE_CN[normalizeAdminType(value)] || String(value || '未详');
 }
 
+const COMPOUND_SURNAMES = [
+  '欧阳','司马','上官','夏侯','诸葛','闻人','东方','赫连','皇甫','尉迟','公羊','澹台','公冶','宗政','濮阳','淳于',
+  '单于','太叔','申屠','公孙','仲孙','轩辕','令狐','钟离','宇文','长孙','慕容','鲜于','闾丘','司徒','司空','亓官',
+  '司寇','子车','颛孙','端木','巫马','公西','漆雕','乐正','壤驷','公良','拓跋','夹谷','宰父','谷梁','段干','百里',
+  '东郭','南门','呼延','归海','羊舌','微生','梁丘','左丘','东门','西门','南宫','第五'
+];
+
+function extractSurname(nameChn) {
+  const text = nameChn === null || nameChn === undefined ? '' : String(nameChn).trim();
+  if (!text) return '';
+  const normalized = text.replace(/[（(].*?[)）]/g, '').trim();
+  if (!normalized) return '';
+  const match = COMPOUND_SURNAMES.find((surname) => normalized.startsWith(surname));
+  return match || normalized.slice(0, 1);
+}
+
 function buildDataset() {
   const rows = db.prepare(`
     SELECT
@@ -186,44 +202,46 @@ function buildDataset() {
       SELECT c_addr_id
       FROM "ADDR_CODES"
       WHERE x_coord IS NOT NULL AND y_coord IS NOT NULL
-    ),
-    ranked AS (
-      SELECT
-        b.c_index_addr_id AS c_addr_id,
-        b.c_personid,
-        b.c_name,
-        b.c_name_chn,
-        b.c_birthyear,
-        b.c_deathyear,
-        b.c_fl_earliest_year,
-        b.c_fl_latest_year,
-        b.c_fl_ey_notes,
-        COALESCE(d.c_dynasty_chn, '[未知]') AS dynasty,
-        ROW_NUMBER() OVER (
-          PARTITION BY b.c_index_addr_id
-          ORDER BY
-            CASE WHEN b.c_name_chn IS NOT NULL AND TRIM(b.c_name_chn) <> '' THEN 0 ELSE 1 END,
-            CASE WHEN b.c_birthyear IS NOT NULL AND b.c_birthyear <> 0 THEN 0 ELSE 1 END,
-            b.c_personid
-        ) AS rn
-      FROM "BIOG_MAIN" b
-      JOIN point_addrs p ON b.c_index_addr_id = p.c_addr_id
-      LEFT JOIN "DYNASTIES" d ON b.c_dy = d.c_dy
     )
     SELECT
-      c_addr_id,
-      c_personid,
-      c_name,
-      c_name_chn,
-      c_birthyear,
-      c_deathyear,
-      c_fl_earliest_year,
-      c_fl_latest_year,
-      c_fl_ey_notes,
-      dynasty
-    FROM ranked
-    WHERE rn <= 30
-    ORDER BY c_addr_id, rn
+      b.c_index_addr_id AS c_addr_id,
+      b.c_personid,
+      b.c_name,
+      b.c_name_chn,
+      b.c_birthyear,
+      b.c_deathyear,
+      b.c_fl_earliest_year,
+      b.c_fl_latest_year,
+      b.c_fl_ey_notes,
+      COALESCE(d.c_dynasty_chn, '[未知]') AS dynasty
+    FROM "BIOG_MAIN" b
+    JOIN point_addrs p ON b.c_index_addr_id = p.c_addr_id
+    LEFT JOIN "DYNASTIES" d ON b.c_dy = d.c_dy
+    ORDER BY
+      b.c_index_addr_id,
+      CASE WHEN b.c_name_chn IS NOT NULL AND TRIM(b.c_name_chn) <> '' THEN 0 ELSE 1 END,
+      CASE WHEN b.c_birthyear IS NOT NULL AND b.c_birthyear <> 0 THEN 0 ELSE 1 END,
+      b.c_personid
+  `).all();
+
+  const personSurnameRows = db.prepare(`
+    WITH point_addrs AS (
+      SELECT c_addr_id
+      FROM "ADDR_CODES"
+      WHERE x_coord IS NOT NULL AND y_coord IS NOT NULL
+    )
+    SELECT
+      b.c_index_addr_id AS c_addr_id,
+      b.c_name_chn
+    FROM "BIOG_MAIN" b
+    JOIN point_addrs p ON b.c_index_addr_id = p.c_addr_id
+    WHERE b.c_name_chn IS NOT NULL AND TRIM(b.c_name_chn) <> ''
+  `).all();
+
+  const allPersonSurnameRows = db.prepare(`
+    SELECT c_name_chn
+    FROM "BIOG_MAIN"
+    WHERE c_name_chn IS NOT NULL AND TRIM(c_name_chn) <> ''
   `).all();
 
   const personStatsMap = new Map();
@@ -234,24 +252,68 @@ function buildDataset() {
       withDeathyear: row.with_deathyear,
       femaleCount: row.female_count,
       dynastyCount: row.dynasty_count,
+      surnames: [],
+      surnameCounts: {},
+      surnameSamples: {},
       samples: [],
     });
+  }
+
+  const surnameMap = new Map();
+  for (const row of personSurnameRows) {
+    const surname = extractSurname(row.c_name_chn);
+    if (!surname) continue;
+    if (!surnameMap.has(row.c_addr_id)) {
+      surnameMap.set(row.c_addr_id, new Map());
+    }
+    const bucket = surnameMap.get(row.c_addr_id);
+    bucket.set(surname, (bucket.get(surname) || 0) + 1);
+  }
+
+  const surnameGlobalCounts = new Map();
+  for (const row of allPersonSurnameRows) {
+    const surname = extractSurname(row.c_name_chn);
+    if (!surname) continue;
+    surnameGlobalCounts.set(surname, (surnameGlobalCounts.get(surname) || 0) + 1);
+  }
+
+  const surnameLocatedCounts = new Map();
+  for (const counts of surnameMap.values()) {
+    for (const [surname, count] of counts.entries()) {
+      surnameLocatedCounts.set(surname, (surnameLocatedCounts.get(surname) || 0) + count);
+    }
+  }
+
+  for (const [addrId, surnames] of surnameMap.entries()) {
+    const bucket = personStatsMap.get(addrId);
+    if (!bucket) continue;
+    bucket.surnames = [...surnames.keys()].sort((a, b) => a.localeCompare(b, 'zh-CN'));
+    bucket.surnameCounts = Object.fromEntries(surnames.entries());
   }
 
   for (const sample of personSamplesRows) {
     const bucket = personStatsMap.get(sample.c_addr_id);
     if (!bucket) continue;
-    bucket.samples.push({
+    const person = {
       c_personid: sample.c_personid,
       c_name: sample.c_name,
       c_name_chn: sample.c_name_chn,
+      surname: extractSurname(sample.c_name_chn),
       c_birthyear: sample.c_birthyear,
       c_deathyear: sample.c_deathyear,
       c_fl_earliest_year: sample.c_fl_earliest_year,
       c_fl_latest_year: sample.c_fl_latest_year,
       c_fl_ey_notes: sample.c_fl_ey_notes,
       dynasty: sample.dynasty,
-    });
+    };
+
+    if (bucket.samples.length < 30) {
+      bucket.samples.push(person);
+    }
+
+    if (person.surname && !bucket.surnameSamples[person.surname]) {
+      bucket.surnameSamples[person.surname] = person;
+    }
   }
 
   const typeCounts = new Map();
@@ -273,6 +335,9 @@ function buildDataset() {
       withDeathyear: 0,
       femaleCount: 0,
       dynastyCount: 0,
+      surnames: [],
+      surnameCounts: {},
+      surnameSamples: {},
       samples: [],
     },
   }));
@@ -284,6 +349,8 @@ function buildDataset() {
       adminTypeCount: typeCounts.size,
       topTypes,
       relatedAddrCount: personStatsMap.size,
+      surnameGlobalCounts: Object.fromEntries(surnameGlobalCounts.entries()),
+      surnameLocatedCounts: Object.fromEntries(surnameLocatedCounts.entries()),
     },
     points: enrichedRows,
   };
@@ -441,6 +508,63 @@ function buildHtml(dataset) {
       flex-direction: column;
       gap: 8px;
       padding-right: 4px;
+    }
+
+    .summary-panel {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(255,255,255,0.7);
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .summary-stat {
+      padding: 10px;
+      border: 1px solid rgba(59, 67, 78, 0.12);
+      border-radius: 12px;
+      background: rgba(255,255,255,0.72);
+    }
+
+    .summary-stat strong {
+      display: block;
+      margin-top: 4px;
+      font-size: 18px;
+    }
+
+    .summary-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .summary-item {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+      border: 1px solid rgba(59, 67, 78, 0.12);
+      border-radius: 12px;
+      padding: 10px 12px;
+      background: rgba(255,255,255,0.66);
+    }
+
+    .summary-item strong {
+      font-size: 16px;
+    }
+
+    .summary-empty {
+      border: 1px dashed rgba(59, 67, 78, 0.2);
+      border-radius: 12px;
+      padding: 12px;
+      background: rgba(255,255,255,0.46);
     }
 
     .legend-item {
@@ -608,8 +732,18 @@ function buildHtml(dataset) {
 
       <div class="controls">
         <input id="search-input" type="search" placeholder="搜索地点名、中文名或行政类型">
+        <input id="surname-input" type="search" placeholder="按人物姓氏过滤，如：苏、王、欧阳">
         <div class="chip-row" id="quick-filters"></div>
       </div>
+
+      <section class="summary-panel">
+        <div>
+          <div class="eyebrow">姓氏统计</div>
+          <p class="muted" id="surname-summary-desc">输入姓氏后，这里会显示该姓人物总数、带位置信息的人数，以及 Top 5 区域分布。</p>
+        </div>
+        <div class="summary-grid" id="surname-summary-stats"></div>
+        <div class="summary-list" id="surname-summary-top"></div>
+      </section>
 
       <div>
         <div class="eyebrow">图例</div>
@@ -643,6 +777,7 @@ function buildHtml(dataset) {
     const dataset = JSON.parse(document.getElementById('dataset').textContent);
     const state = {
       query: '',
+      surnameQuery: '',
       activeType: 'ALL',
     };
 
@@ -662,6 +797,10 @@ function buildHtml(dataset) {
       legend: document.getElementById('legend'),
       quickFilters: document.getElementById('quick-filters'),
       searchInput: document.getElementById('search-input'),
+      surnameInput: document.getElementById('surname-input'),
+      surnameSummaryDesc: document.getElementById('surname-summary-desc'),
+      surnameSummaryStats: document.getElementById('surname-summary-stats'),
+      surnameSummaryTop: document.getElementById('surname-summary-top'),
       sidebarDesc: document.getElementById('sidebar-desc'),
       mapTitle: document.getElementById('map-title'),
       mapSubtitle: document.getElementById('map-subtitle'),
@@ -714,6 +853,47 @@ function buildHtml(dataset) {
       return '年代未详';
     }
 
+    function surnameMatchesQueryValue(surname, query) {
+      const surnameText = String(surname || '').trim();
+      const queryText = String(query || '').trim();
+      if (!queryText) return true;
+      if (!surnameText) return false;
+      return surnameText === queryText || surnameText.startsWith(queryText) || queryText.startsWith(surnameText);
+    }
+
+    function getMatchedSurnames(biog) {
+      const query = state.surnameQuery.trim();
+      const surnames = biog && Array.isArray(biog.surnames) ? biog.surnames : [];
+      if (!query) return surnames;
+      return surnames.filter((surname) => surnameMatchesQueryValue(surname, query));
+    }
+
+    function getMatchedPersonCount(biog) {
+      const query = state.surnameQuery.trim();
+      if (!query) return biog.personCount || 0;
+      const counts = biog && biog.surnameCounts ? biog.surnameCounts : {};
+      return Object.entries(counts).reduce((sum, [surname, count]) => {
+        return surnameMatchesQueryValue(surname, query) ? sum + Number(count || 0) : sum;
+      }, 0);
+    }
+
+    function getVisiblePeople(biog) {
+      const query = state.surnameQuery.trim();
+      const people = biog && Array.isArray(biog.samples) ? biog.samples : [];
+      if (!query) return people;
+      const matched = people.filter((person) => surnameMatchesQueryValue(person.surname, query));
+      const byId = new Map(matched.map((person) => [String(person.c_personid), person]));
+      const surnameSamples = biog && biog.surnameSamples ? biog.surnameSamples : {};
+      for (const [surname, person] of Object.entries(surnameSamples)) {
+        if (!surnameMatchesQueryValue(surname, query)) continue;
+        const personId = String(person.c_personid);
+        if (!byId.has(personId)) {
+          byId.set(personId, person);
+        }
+      }
+      return [...byId.values()];
+    }
+
     function buildPeopleSection(point) {
       const biog = point.biogMain || { personCount: 0, samples: [] };
       if (!biog.personCount) {
@@ -725,17 +905,29 @@ function buildHtml(dataset) {
         );
       }
 
-      const peopleStats =
-        '<div class="popup-grid">' +
-          '<div>关联人数</div><div>' + escapeHtml(biog.personCount) + '</div>' +
-          '<div>有生年</div><div>' + escapeHtml(biog.withBirthyear) + '</div>' +
-          '<div>有卒年</div><div>' + escapeHtml(biog.withDeathyear) + '</div>' +
-          '<div>女性人数</div><div>' + escapeHtml(biog.femaleCount) + '</div>' +
-          '<div>涉及朝代</div><div>' + escapeHtml(biog.dynastyCount) + '</div>' +
-        '</div>';
+      const matchedSurnames = getMatchedSurnames(biog);
+      const matchedPersonCount = getMatchedPersonCount(biog);
+      const visiblePeople = getVisiblePeople(biog);
+      const isSurnameFiltering = Boolean(state.surnameQuery.trim());
 
-      const peopleList = biog.samples.length
-        ? '<div class="person-list">' + biog.samples.map((person) => (
+      const peopleStats = isSurnameFiltering
+        ? '<div class="popup-grid">' +
+            '<div>命中人数</div><div>' + escapeHtml(matchedPersonCount) + '</div>' +
+            '<div>命中姓氏</div><div>' + escapeHtml(matchedSurnames.join('、') || state.surnameQuery.trim()) + '</div>' +
+            '<div>当前展示人物</div><div>' + escapeHtml(visiblePeople.length) + '</div>' +
+            '<div>地点关联总人数</div><div>' + escapeHtml(biog.personCount) + '</div>' +
+          '</div>'
+        : '<div class="popup-grid">' +
+            '<div>关联人数</div><div>' + escapeHtml(biog.personCount) + '</div>' +
+            '<div>有生年</div><div>' + escapeHtml(biog.withBirthyear) + '</div>' +
+            '<div>有卒年</div><div>' + escapeHtml(biog.withDeathyear) + '</div>' +
+            '<div>女性人数</div><div>' + escapeHtml(biog.femaleCount) + '</div>' +
+            '<div>涉及朝代</div><div>' + escapeHtml(biog.dynastyCount) + '</div>' +
+            '<div>关联姓氏</div><div>' + escapeHtml((biog.surnames || []).slice(0, 12).join('、') || '未详') + '</div>' +
+          '</div>';
+
+      const peopleList = visiblePeople.length
+        ? '<div class="person-list">' + visiblePeople.map((person) => (
             '<div class="person-item">' +
               '<strong>' + escapeHtml(person.c_name_chn || '[无中文名]') + '</strong>' +
               '<div>' + escapeHtml(person.c_name || '') + '</div>' +
@@ -746,15 +938,19 @@ function buildHtml(dataset) {
               '<div>人物编号：' + escapeHtml(person.c_personid) + '</div>' +
             '</div>'
           )).join('') + '</div>'
-        : '<div style="margin-top:8px;">暂无可展示的关联人物。</div>';
+        : '<div style="margin-top:8px;">当前姓氏过滤下，这个地点没有可展示的人物样本。</div>';
+
+      const sampleHint = isSurnameFiltering && matchedPersonCount > visiblePeople.length
+        ? '<div class="muted" style="margin-top:4px;">该地点实际命中 ' + escapeHtml(matchedPersonCount) + ' 人；为保证页面性能，弹窗仅内置部分人物样本，因此这里展示的是命中的样本子集。</div>'
+        : '<div class="muted" style="margin-top:4px;">为避免弹窗过长，这里最多展示前 30 人。</div>';
 
       return (
         '<div class="person-section">' +
           '<strong>关联人物</strong>' +
           '<div style="margin-top:6px;" class="muted">关联依据：人物主表中的索引地编号与当前地点编号一致。</div>' +
           peopleStats +
-          '<div style="margin-top:8px;"><strong>关联人物列表</strong></div>' +
-          '<div class="muted" style="margin-top:4px;">为避免弹窗过长，这里最多展示前 30 人。</div>' +
+          '<div style="margin-top:8px;"><strong>' + (isSurnameFiltering ? '命中人物列表' : '关联人物列表') + '</strong></div>' +
+          sampleHint +
           peopleList +
         '</div>'
       );
@@ -834,8 +1030,47 @@ function buildHtml(dataset) {
       return state.activeType === 'ALL' || (point.c_admin_type || '[Unknown]') === state.activeType;
     }
 
+    function matchesSurname(point) {
+      const q = state.surnameQuery.trim();
+      if (!q) return true;
+      const surnames = point.biogMain && Array.isArray(point.biogMain.surnames) ? point.biogMain.surnames : [];
+      if (!surnames.length) return false;
+      return surnames.some((surname) => surnameMatchesQueryValue(surname, q));
+    }
+
     function filteredPoints() {
-      return points.filter((point) => matchesQuery(point) && matchesType(point));
+      return points.filter((point) => matchesQuery(point) && matchesSurname(point) && matchesType(point));
+    }
+
+    function getSurnameSummary() {
+      const query = state.surnameQuery.trim();
+      if (!query) return null;
+
+      const globalCounts = dataset.meta.surnameGlobalCounts || {};
+      const matchedSurnameEntries = Object.entries(globalCounts)
+        .filter(([surname]) => surnameMatchesQueryValue(surname, query))
+        .sort((a, b) => b[1] - a[1]);
+
+      const totalCount = matchedSurnameEntries.reduce((sum, [, count]) => sum + Number(count || 0), 0);
+      const locatedCount = visiblePoints.reduce((sum, point) => sum + getMatchedPersonCount(point.biogMain || {}), 0);
+      const regionTop = visiblePoints
+        .map((point) => ({
+          name: point.c_name_chn || point.c_name || ('地点 ' + point.c_addr_id),
+          adminType: window.adminTypeLabel(point.c_admin_type),
+          count: getMatchedPersonCount(point.biogMain || {}),
+          addrId: point.c_addr_id,
+        }))
+        .filter((item) => item.count > 0)
+        .sort((a, b) => b.count - a.count || String(a.name).localeCompare(String(b.name), 'zh-CN'))
+        .slice(0, 5);
+
+      return {
+        query,
+        matchedSurnames: matchedSurnameEntries.map(([surname]) => surname),
+        totalCount,
+        locatedCount,
+        regionTop,
+      };
     }
 
     function renderStats() {
@@ -847,6 +1082,44 @@ function buildHtml(dataset) {
       ];
       el.stats.innerHTML = stats.map(([label, value]) => (
         '<div class="stat"><div class="eyebrow">' + escapeHtml(label) + '</div><strong>' + escapeHtml(value) + '</strong></div>'
+      )).join('');
+    }
+
+    function renderSurnameSummary() {
+      const summary = getSurnameSummary();
+      if (!summary) {
+        el.surnameSummaryDesc.textContent = '输入姓氏后，这里会显示该姓人物总数、带位置信息的人数，以及 Top 5 区域分布。';
+        el.surnameSummaryStats.innerHTML = '';
+        el.surnameSummaryTop.innerHTML = '<div class="summary-empty muted">当前还没有输入姓氏。</div>';
+        return;
+      }
+
+      const surnameLabel = summary.matchedSurnames.slice(0, 8).join('、') || summary.query;
+      el.surnameSummaryDesc.textContent =
+        '当前命中姓氏：' + surnameLabel + (summary.matchedSurnames.length > 8 ? ' 等' : '') + '。Top 5 区域按当前地图筛选结果统计。';
+
+      const stats = [
+        ['总数量', summary.totalCount],
+        ['包含位置信息的总数', summary.locatedCount],
+      ];
+      el.surnameSummaryStats.innerHTML = stats.map(([label, value]) => (
+        '<div class="summary-stat"><div class="eyebrow">' + escapeHtml(label) + '</div><strong>' + escapeHtml(value) + '</strong></div>'
+      )).join('');
+
+      if (!summary.regionTop.length) {
+        el.surnameSummaryTop.innerHTML = '<div class="summary-empty muted">当前地图范围内没有可统计的区域分布。</div>';
+        return;
+      }
+
+      el.surnameSummaryTop.innerHTML = summary.regionTop.map((item, index) => (
+        '<div class="summary-item">' +
+          '<div>' +
+            '<div class="eyebrow">Top ' + escapeHtml(index + 1) + '</div>' +
+            '<strong>' + escapeHtml(item.name) + '</strong>' +
+            '<div class="muted" style="margin-top:4px;">' + escapeHtml(item.adminType) + ' · 地点编号 ' + escapeHtml(item.addrId) + '</div>' +
+          '</div>' +
+          '<strong>' + escapeHtml(item.count) + '</strong>' +
+        '</div>'
       )).join('');
     }
 
@@ -910,6 +1183,7 @@ function buildHtml(dataset) {
     function rerenderMap() {
       visiblePoints = filteredPoints();
       renderStats();
+      renderSurnameSummary();
       renderQuickFilters();
       renderLegend();
 
@@ -924,7 +1198,13 @@ function buildHtml(dataset) {
       map.addLayer(clusterGroup);
 
       el.mapTitle.textContent = state.activeType === 'ALL' ? '全部点位' : window.adminTypeLabel(state.activeType);
-      el.mapSubtitle.textContent = '当前显示 ' + visiblePoints.length + ' 个带坐标地点；点击点位可查看地点信息，以及按“人物主表索引地”关联到该地点的人物列表。';
+      const subtitleParts = [
+        '当前显示 ' + visiblePoints.length + ' 个带坐标地点；点击点位可查看地点信息，以及按“人物主表索引地”关联到该地点的人物列表。',
+      ];
+      if (state.surnameQuery.trim()) {
+        subtitleParts.push('当前姓氏过滤：' + state.surnameQuery.trim());
+      }
+      el.mapSubtitle.textContent = subtitleParts.join(' ');
 
       if (visiblePoints.length) {
         const bounds = L.latLngBounds(visiblePoints.map((point) => [point.y_coord, point.x_coord]));
@@ -938,6 +1218,11 @@ function buildHtml(dataset) {
 
     el.searchInput.addEventListener('input', (event) => {
       state.query = event.target.value;
+      rerenderMap();
+    });
+
+    el.surnameInput.addEventListener('input', (event) => {
+      state.surnameQuery = event.target.value;
       rerenderMap();
     });
 
