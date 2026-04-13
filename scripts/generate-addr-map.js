@@ -252,9 +252,13 @@ function buildDataset() {
       withDeathyear: row.with_deathyear,
       femaleCount: row.female_count,
       dynastyCount: row.dynasty_count,
+      dynasties: [],
+      dynastyCounts: {},
+      dynastySamples: {},
       surnames: [],
       surnameCounts: {},
       surnameSamples: {},
+      comboCounts: {},
       samples: [],
     });
   }
@@ -283,6 +287,8 @@ function buildDataset() {
       surnameLocatedCounts.set(surname, (surnameLocatedCounts.get(surname) || 0) + count);
     }
   }
+
+  const dynastyGlobalCounts = new Map();
 
   for (const [addrId, surnames] of surnameMap.entries()) {
     const bucket = personStatsMap.get(addrId);
@@ -314,6 +320,23 @@ function buildDataset() {
     if (person.surname && !bucket.surnameSamples[person.surname]) {
       bucket.surnameSamples[person.surname] = person;
     }
+
+    const dynasty = person.dynasty || '[未知]';
+    bucket.dynastyCounts[dynasty] = (bucket.dynastyCounts[dynasty] || 0) + 1;
+    dynastyGlobalCounts.set(dynasty, (dynastyGlobalCounts.get(dynasty) || 0) + 1);
+
+    if (!bucket.dynastySamples[dynasty]) {
+      bucket.dynastySamples[dynasty] = person;
+    }
+
+    if (person.surname) {
+      const comboKey = person.surname + '||' + dynasty;
+      bucket.comboCounts[comboKey] = (bucket.comboCounts[comboKey] || 0) + 1;
+    }
+  }
+
+  for (const bucket of personStatsMap.values()) {
+    bucket.dynasties = Object.keys(bucket.dynastyCounts).sort((a, b) => a.localeCompare(b, 'zh-CN'));
   }
 
   const typeCounts = new Map();
@@ -335,12 +358,20 @@ function buildDataset() {
       withDeathyear: 0,
       femaleCount: 0,
       dynastyCount: 0,
+      dynasties: [],
+      dynastyCounts: {},
+      dynastySamples: {},
       surnames: [],
       surnameCounts: {},
       surnameSamples: {},
+      comboCounts: {},
       samples: [],
     },
   }));
+
+  const topDynasties = [...dynastyGlobalCounts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([dynasty, count]) => ({ dynasty, count }));
 
   return {
     meta: {
@@ -348,9 +379,11 @@ function buildDataset() {
       totalWithCoords: rows.length,
       adminTypeCount: typeCounts.size,
       topTypes,
+      topDynasties,
       relatedAddrCount: personStatsMap.size,
       surnameGlobalCounts: Object.fromEntries(surnameGlobalCounts.entries()),
       surnameLocatedCounts: Object.fromEntries(surnameLocatedCounts.entries()),
+      dynastyGlobalCounts: Object.fromEntries(dynastyGlobalCounts.entries()),
     },
     points: enrichedRows,
   };
@@ -364,7 +397,7 @@ function buildHtml(dataset) {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>地点代码地图</title>
+  <title>CBDB 人物索引地分布地图</title>
   <link
     rel="stylesheet"
     href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
@@ -476,6 +509,16 @@ function buildHtml(dataset) {
       border-radius: 14px;
       padding: 12px 14px;
       font-size: 14px;
+    }
+
+    select {
+      width: 100%;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.82);
+      border-radius: 14px;
+      padding: 12px 14px;
+      font-size: 14px;
+      color: var(--text);
     }
 
     .chip-row {
@@ -594,7 +637,7 @@ function buildHtml(dataset) {
     .map-panel {
       padding: 14px;
       display: grid;
-      grid-template-rows: auto 1fr;
+      grid-template-rows: auto auto 1fr;
       gap: 12px;
       min-height: calc(100vh - 24px);
     }
@@ -609,6 +652,16 @@ function buildHtml(dataset) {
 
     .map-head .muted {
       max-width: 860px;
+    }
+
+    .map-summary-panel {
+      background: rgba(255,255,255,0.78);
+    }
+
+    .map-summary-panel .summary-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 10px;
     }
 
     #map {
@@ -628,8 +681,6 @@ function buildHtml(dataset) {
     }
 
     .cluster-wrap {
-      width: 44px;
-      height: 44px;
       border-radius: 999px;
       display: grid;
       place-items: center;
@@ -640,7 +691,7 @@ function buildHtml(dataset) {
     }
 
     .cluster-wrap span {
-      font-size: 13px;
+      line-height: 1;
     }
 
     .leaflet-popup-content {
@@ -723,8 +774,8 @@ function buildHtml(dataset) {
   <div class="shell">
     <aside class="panel sidebar">
       <div>
-        <div class="eyebrow">地点代码地图</div>
-        <h1>地理点位聚合地图</h1>
+        <div class="eyebrow">CBDB 人地分布</div>
+        <h1>人物索引地聚合分析地图</h1>
         <p class="muted" id="sidebar-desc"></p>
       </div>
 
@@ -733,6 +784,7 @@ function buildHtml(dataset) {
       <div class="controls">
         <input id="search-input" type="search" placeholder="搜索地点名、中文名或行政类型">
         <input id="surname-input" type="search" placeholder="按人物姓氏过滤，如：苏、王、欧阳">
+        <select id="dynasty-select"></select>
         <div class="chip-row" id="quick-filters"></div>
       </div>
 
@@ -756,11 +808,19 @@ function buildHtml(dataset) {
     <main class="panel map-panel">
       <div class="map-head">
         <div>
-          <div class="eyebrow">聚合点位</div>
+          <div class="eyebrow">空间聚合视图</div>
           <h2 id="map-title">全部点位</h2>
           <p class="muted" id="map-subtitle"></p>
         </div>
       </div>
+      <section class="summary-panel map-summary-panel">
+        <div>
+          <div class="eyebrow">朝代统计</div>
+          <p class="muted" id="dynasty-summary-desc">输入姓氏或地点名后，这里会显示当前查询结果的人物朝代分布。</p>
+        </div>
+        <div class="summary-grid" id="dynasty-summary-stats"></div>
+        <div class="summary-list" id="dynasty-summary-top"></div>
+      </section>
       <div id="map"></div>
     </main>
   </div>
@@ -778,11 +838,13 @@ function buildHtml(dataset) {
     const state = {
       query: '',
       surnameQuery: '',
+      activeDynasty: 'ALL',
       activeType: 'ALL',
     };
 
     const points = dataset.points;
     const topTypes = dataset.meta.topTypes;
+    const topDynasties = dataset.meta.topDynasties || [];
     const paletteCache = new Map();
     let clusterGroup = null;
     let visiblePoints = [];
@@ -798,9 +860,13 @@ function buildHtml(dataset) {
       quickFilters: document.getElementById('quick-filters'),
       searchInput: document.getElementById('search-input'),
       surnameInput: document.getElementById('surname-input'),
+      dynastySelect: document.getElementById('dynasty-select'),
       surnameSummaryDesc: document.getElementById('surname-summary-desc'),
       surnameSummaryStats: document.getElementById('surname-summary-stats'),
       surnameSummaryTop: document.getElementById('surname-summary-top'),
+      dynastySummaryDesc: document.getElementById('dynasty-summary-desc'),
+      dynastySummaryStats: document.getElementById('dynasty-summary-stats'),
+      dynastySummaryTop: document.getElementById('dynasty-summary-top'),
       sidebarDesc: document.getElementById('sidebar-desc'),
       mapTitle: document.getElementById('map-title'),
       mapSubtitle: document.getElementById('map-subtitle'),
@@ -861,6 +927,11 @@ function buildHtml(dataset) {
       return surnameText === queryText || surnameText.startsWith(queryText) || queryText.startsWith(surnameText);
     }
 
+    function dynastyMatchesFilterValue(dynasty, filterValue) {
+      if (!filterValue || filterValue === 'ALL') return true;
+      return String(dynasty || '[未知]').trim() === filterValue;
+    }
+
     function getMatchedSurnames(biog) {
       const query = state.surnameQuery.trim();
       const surnames = biog && Array.isArray(biog.surnames) ? biog.surnames : [];
@@ -870,22 +941,55 @@ function buildHtml(dataset) {
 
     function getMatchedPersonCount(biog) {
       const query = state.surnameQuery.trim();
-      if (!query) return biog.personCount || 0;
-      const counts = biog && biog.surnameCounts ? biog.surnameCounts : {};
-      return Object.entries(counts).reduce((sum, [surname, count]) => {
-        return surnameMatchesQueryValue(surname, query) ? sum + Number(count || 0) : sum;
-      }, 0);
+      const dynasty = state.activeDynasty;
+      if (!query && dynasty === 'ALL') return biog.personCount || 0;
+
+      if (query && dynasty !== 'ALL') {
+        const comboCounts = biog && biog.comboCounts ? biog.comboCounts : {};
+        return Object.entries(comboCounts).reduce((sum, [comboKey, count]) => {
+          const parts = comboKey.split('||');
+          const surname = parts[0] || '';
+          const comboDynasty = parts[1] || '[未知]';
+          return surnameMatchesQueryValue(surname, query) && dynastyMatchesFilterValue(comboDynasty, dynasty)
+            ? sum + Number(count || 0)
+            : sum;
+        }, 0);
+      }
+
+      if (query) {
+        const counts = biog && biog.surnameCounts ? biog.surnameCounts : {};
+        return Object.entries(counts).reduce((sum, [surname, count]) => {
+          return surnameMatchesQueryValue(surname, query) ? sum + Number(count || 0) : sum;
+        }, 0);
+      }
+
+      const dynastyCounts = biog && biog.dynastyCounts ? biog.dynastyCounts : {};
+      return Number(dynastyCounts[dynasty] || 0);
     }
 
     function getVisiblePeople(biog) {
       const query = state.surnameQuery.trim();
+      const dynasty = state.activeDynasty;
       const people = biog && Array.isArray(biog.samples) ? biog.samples : [];
-      if (!query) return people;
-      const matched = people.filter((person) => surnameMatchesQueryValue(person.surname, query));
+      if (!query && dynasty === 'ALL') return people;
+      const matched = people.filter((person) => (
+        surnameMatchesQueryValue(person.surname, query) &&
+        dynastyMatchesFilterValue(person.dynasty, dynasty)
+      ));
       const byId = new Map(matched.map((person) => [String(person.c_personid), person]));
       const surnameSamples = biog && biog.surnameSamples ? biog.surnameSamples : {};
       for (const [surname, person] of Object.entries(surnameSamples)) {
         if (!surnameMatchesQueryValue(surname, query)) continue;
+        if (!dynastyMatchesFilterValue(person.dynasty, dynasty)) continue;
+        const personId = String(person.c_personid);
+        if (!byId.has(personId)) {
+          byId.set(personId, person);
+        }
+      }
+      const dynastySamples = biog && biog.dynastySamples ? biog.dynastySamples : {};
+      for (const [personDynasty, person] of Object.entries(dynastySamples)) {
+        if (!dynastyMatchesFilterValue(personDynasty, dynasty)) continue;
+        if (!surnameMatchesQueryValue(person.surname, query)) continue;
         const personId = String(person.c_personid);
         if (!byId.has(personId)) {
           byId.set(personId, person);
@@ -909,11 +1013,18 @@ function buildHtml(dataset) {
       const matchedPersonCount = getMatchedPersonCount(biog);
       const visiblePeople = getVisiblePeople(biog);
       const isSurnameFiltering = Boolean(state.surnameQuery.trim());
+      const isDynastyFiltering = state.activeDynasty !== 'ALL';
+      const visibleSurnameText = [...new Set(
+        visiblePeople
+          .map((person) => String(person.surname || '').trim())
+          .filter(Boolean)
+      )].join('、');
 
-      const peopleStats = isSurnameFiltering
+      const peopleStats = (isSurnameFiltering || isDynastyFiltering)
         ? '<div class="popup-grid">' +
             '<div>命中人数</div><div>' + escapeHtml(matchedPersonCount) + '</div>' +
-            '<div>命中姓氏</div><div>' + escapeHtml(matchedSurnames.join('、') || state.surnameQuery.trim()) + '</div>' +
+            '<div>命中姓氏</div><div>' + escapeHtml(visibleSurnameText || matchedSurnames.join('、') || (state.surnameQuery.trim() || '全部')) + '</div>' +
+            '<div>命中朝代</div><div>' + escapeHtml(isDynastyFiltering ? state.activeDynasty : '全部') + '</div>' +
             '<div>当前展示人物</div><div>' + escapeHtml(visiblePeople.length) + '</div>' +
             '<div>地点关联总人数</div><div>' + escapeHtml(biog.personCount) + '</div>' +
           '</div>'
@@ -949,7 +1060,7 @@ function buildHtml(dataset) {
           '<strong>关联人物</strong>' +
           '<div style="margin-top:6px;" class="muted">关联依据：人物主表中的索引地编号与当前地点编号一致。</div>' +
           peopleStats +
-          '<div style="margin-top:8px;"><strong>' + (isSurnameFiltering ? '命中人物列表' : '关联人物列表') + '</strong></div>' +
+          '<div style="margin-top:8px;"><strong>' + ((isSurnameFiltering || isDynastyFiltering) ? '命中人物列表' : '关联人物列表') + '</strong></div>' +
           sampleHint +
           peopleList +
         '</div>'
@@ -958,6 +1069,7 @@ function buildHtml(dataset) {
 
     function buildMarker(point) {
       const adminType = point.c_admin_type || '[Unknown]';
+      const matchedPersonCount = getMatchedPersonCount(point.biogMain || {});
       const marker = L.marker([point.y_coord, point.x_coord], {
         icon: L.divIcon({
           className: '',
@@ -970,12 +1082,14 @@ function buildHtml(dataset) {
 
       const yearText = [point.c_firstyear || '?', point.c_lastyear || '?'].join(' - ');
       marker.__adminType = adminType;
+      marker.__personCount = matchedPersonCount;
       marker.bindPopup(
         '<strong>' + escapeHtml(point.c_name_chn || '[无中文名]') + '</strong>' +
         (point.c_name ? '<div>拼写：' + escapeHtml(point.c_name) + '</div>' : '') +
         '<div class="popup-grid">' +
           '<div>地点编号</div><div>' + escapeHtml(point.c_addr_id) + '</div>' +
           '<div>行政类型</div><div>' + escapeHtml(window.adminTypeLabel(adminType)) + '</div>' +
+          '<div>关联人物数</div><div>' + escapeHtml(matchedPersonCount) + '</div>' +
           '<div>存续年代</div><div>' + escapeHtml(yearText) + '</div>' +
           '<div>坐标</div><div>' + escapeHtml(point.x_coord + ', ' + point.y_coord) + '</div>' +
           '<div>CHGIS 点位</div><div>' + escapeHtml(point.CHGIS_PT_ID ?? '') + '</div>' +
@@ -988,18 +1102,33 @@ function buildHtml(dataset) {
     }
 
     function buildClusterIcon(cluster) {
-      const children = cluster.getAllChildMarkers();
-      const counts = new Map();
-      for (const marker of children) {
-        const key = marker.__adminType || '[Unknown]';
-        counts.set(key, (counts.get(key) || 0) + 1);
-      }
-      const dominant = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || '[Unknown]';
-      const color = colorForType(dominant);
+      const peopleCount = cluster.getAllChildMarkers().reduce((sum, marker) => sum + Number(marker.__personCount || 0), 0);
+      const displayCount = peopleCount > 0 ? peopleCount : cluster.getChildCount();
+      const scale = Math.min(1, Math.log(displayCount + 1) / Math.log(20000));
+      const size = Math.round(34 + (scale * 28));
+      const fontSize = Math.round(11 + (scale * 6));
+      const hueA = Math.round(196 - (scale * 164));
+      const hueB = Math.round(156 - (scale * 120));
+      const saturation = Math.round(68 + (scale * 14));
+      const lightnessA = Math.round(68 - (scale * 24));
+      const lightnessB = Math.round(58 - (scale * 16));
+      const gradient = 'linear-gradient(135deg, ' +
+        'hsl(' + hueA + ' ' + saturation + '% ' + lightnessA + '%), ' +
+        'hsl(' + hueB + ' ' + Math.max(60, saturation - 6) + '% ' + lightnessB + '%))';
+      const shadow = '0 10px 18px rgba(0,0,0,' + (0.12 + scale * 0.16).toFixed(2) + ')';
       return L.divIcon({
-        html: '<div class="cluster-wrap" style="background:' + color + '"><span>' + cluster.getChildCount() + '</span></div>',
+        html:
+          '<div class="cluster-wrap" style="' +
+            'width:' + size + 'px;' +
+            'height:' + size + 'px;' +
+            'background:' + gradient + ';' +
+            'box-shadow:' + shadow + ';' +
+          '">' +
+            '<span style="font-size:' + fontSize + 'px;">' + displayCount + '</span>' +
+          '</div>',
         className: '',
-        iconSize: [44, 44],
+        iconSize: [size, size],
+        iconAnchor: [Math.round(size / 2), Math.round(size / 2)],
       });
     }
 
@@ -1038,8 +1167,18 @@ function buildHtml(dataset) {
       return surnames.some((surname) => surnameMatchesQueryValue(surname, q));
     }
 
-    function filteredPoints() {
+    function matchesDynasty(point) {
+      if (state.activeDynasty === 'ALL') return true;
+      const counts = point.biogMain && point.biogMain.dynastyCounts ? point.biogMain.dynastyCounts : {};
+      return Number(counts[state.activeDynasty] || 0) > 0;
+    }
+
+    function baseFilteredPoints() {
       return points.filter((point) => matchesQuery(point) && matchesSurname(point) && matchesType(point));
+    }
+
+    function filteredPoints() {
+      return baseFilteredPoints().filter((point) => matchesDynasty(point));
     }
 
     function getSurnameSummary() {
@@ -1070,6 +1209,44 @@ function buildHtml(dataset) {
         totalCount,
         locatedCount,
         regionTop,
+      };
+    }
+
+    function getDynastySummary() {
+      const basePoints = baseFilteredPoints();
+      const dynastyCounts = new Map();
+
+      for (const point of basePoints) {
+        const biog = point.biogMain || {};
+        if (state.surnameQuery.trim()) {
+          const comboCounts = biog.comboCounts || {};
+          for (const [comboKey, count] of Object.entries(comboCounts)) {
+            const parts = comboKey.split('||');
+            const surname = parts[0] || '';
+            const dynasty = parts[1] || '[未知]';
+            if (!surnameMatchesQueryValue(surname, state.surnameQuery.trim())) continue;
+            dynastyCounts.set(dynasty, (dynastyCounts.get(dynasty) || 0) + Number(count || 0));
+          }
+        } else {
+          const counts = biog.dynastyCounts || {};
+          for (const [dynasty, count] of Object.entries(counts)) {
+            dynastyCounts.set(dynasty, (dynastyCounts.get(dynasty) || 0) + Number(count || 0));
+          }
+        }
+      }
+
+      const top = [...dynastyCounts.entries()]
+        .sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0]), 'zh-CN'))
+        .slice(0, 5)
+        .map(([dynasty, count]) => ({ dynasty, count }));
+
+      const totalCount = [...dynastyCounts.values()].reduce((sum, count) => sum + Number(count || 0), 0);
+
+      return {
+        totalCount,
+        dynastyCount: dynastyCounts.size,
+        top,
+        hasQueryContext: Boolean(state.query.trim() || state.surnameQuery.trim() || state.activeType !== 'ALL'),
       };
     }
 
@@ -1120,6 +1297,50 @@ function buildHtml(dataset) {
           '</div>' +
           '<strong>' + escapeHtml(item.count) + '</strong>' +
         '</div>'
+      )).join('');
+    }
+
+    function renderDynastySummary() {
+      const summary = getDynastySummary();
+      const selectedDynastyText = state.activeDynasty === 'ALL' ? '全部朝代' : state.activeDynasty;
+      el.dynastySummaryDesc.textContent =
+        (summary.hasQueryContext ? '以下统计基于当前地名 / 姓氏 / 类型筛选结果。' : '以下统计基于当前地图全部可见人物。') +
+        ' 当前朝代过滤：' + selectedDynastyText + '。这里显示的是关联人物数量，不是朝代代码。';
+
+      const stats = [
+        ['命中人物总数', summary.totalCount],
+        ['涉及朝代数', summary.dynastyCount],
+      ];
+      el.dynastySummaryStats.innerHTML = stats.map(([label, value]) => (
+        '<div class="summary-stat"><div class="eyebrow">' + escapeHtml(label) + '</div><strong>' + escapeHtml(value) + '</strong></div>'
+      )).join('');
+
+      if (!summary.top.length) {
+        el.dynastySummaryTop.innerHTML = '<div class="summary-empty muted">当前结果中没有可统计的朝代分布。</div>';
+        return;
+      }
+
+      el.dynastySummaryTop.innerHTML = summary.top.map((item, index) => (
+        '<div class="summary-item">' +
+          '<div>' +
+            '<div class="eyebrow">Top ' + escapeHtml(index + 1) + '</div>' +
+            '<strong>' + escapeHtml(item.dynasty) + '</strong>' +
+            '<div class="muted" style="margin-top:4px;">当前查询结果中的人物数量</div>' +
+          '</div>' +
+          '<strong>' + escapeHtml(item.count) + '</strong>' +
+        '</div>'
+      )).join('');
+    }
+
+    function renderDynastyOptions() {
+      const options = [
+        { value: 'ALL', label: '全部朝代' },
+        ...topDynasties.map((item) => ({ value: item.dynasty || '[未知]', label: item.dynasty || '[未知]' })),
+      ];
+      el.dynastySelect.innerHTML = options.map((item) => (
+        '<option value="' + escapeHtml(item.value) + '"' + (state.activeDynasty === item.value ? ' selected' : '') + '>' +
+        escapeHtml(item.label) +
+        '</option>'
       )).join('');
     }
 
@@ -1184,6 +1405,8 @@ function buildHtml(dataset) {
       visiblePoints = filteredPoints();
       renderStats();
       renderSurnameSummary();
+      renderDynastySummary();
+      renderDynastyOptions();
       renderQuickFilters();
       renderLegend();
 
@@ -1204,6 +1427,9 @@ function buildHtml(dataset) {
       if (state.surnameQuery.trim()) {
         subtitleParts.push('当前姓氏过滤：' + state.surnameQuery.trim());
       }
+      if (state.activeDynasty !== 'ALL') {
+        subtitleParts.push('当前朝代过滤：' + state.activeDynasty);
+      }
       el.mapSubtitle.textContent = subtitleParts.join(' ');
 
       if (visiblePoints.length) {
@@ -1214,7 +1440,7 @@ function buildHtml(dataset) {
       }
     }
 
-    el.sidebarDesc.textContent = '从地点代码表中读取了 ' + dataset.meta.totalWithCoords + ' 个带坐标地点，按行政类型着色，并使用聚合图标在缩放时自动展开。点击点位后还会展示该地点关联到的人物主表人物信息。';
+    el.sidebarDesc.textContent = '本页基于 ADDR_CODES 中的 ' + dataset.meta.totalWithCoords + ' 个带坐标地点，结合 BIOG_MAIN 的人物索引地信息，展示人物与地点的空间分布。支持按地名、姓氏、朝代和行政类型筛选，聚合图标会随点位数量变化大小与颜色，点击点位可查看地点详情、关联人物与统计信息。';
 
     el.searchInput.addEventListener('input', (event) => {
       state.query = event.target.value;
@@ -1223,6 +1449,11 @@ function buildHtml(dataset) {
 
     el.surnameInput.addEventListener('input', (event) => {
       state.surnameQuery = event.target.value;
+      rerenderMap();
+    });
+
+    el.dynastySelect.addEventListener('change', (event) => {
+      state.activeDynasty = event.target.value;
       rerenderMap();
     });
 
