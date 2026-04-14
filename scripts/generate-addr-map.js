@@ -350,42 +350,170 @@ function buildDataset() {
     .slice(0, 18)
     .map(([type, count]) => ({ type, count }));
 
+  const emptyBiogMain = () => ({
+    personCount: 0,
+    withBirthyear: 0,
+    withDeathyear: 0,
+    femaleCount: 0,
+    dynastyCount: 0,
+    dynasties: [],
+    dynastyCounts: {},
+    dynastySamples: {},
+    surnames: [],
+    surnameCounts: {},
+    surnameSamples: {},
+    comboCounts: {},
+    samples: [],
+  });
+
   const enrichedRows = rows.map((row) => ({
     ...row,
-    biogMain: personStatsMap.get(row.c_addr_id) || {
-      personCount: 0,
-      withBirthyear: 0,
-      withDeathyear: 0,
-      femaleCount: 0,
-      dynastyCount: 0,
-      dynasties: [],
-      dynastyCounts: {},
-      dynastySamples: {},
-      surnames: [],
-      surnameCounts: {},
-      surnameSamples: {},
-      comboCounts: {},
-      samples: [],
-    },
+    biogMain: personStatsMap.get(row.c_addr_id) || emptyBiogMain(),
   }));
+
+  function mergeNumberMap(target, source) {
+    for (const [key, value] of Object.entries(source || {})) {
+      target[key] = (target[key] || 0) + Number(value || 0);
+    }
+  }
+
+  const coordGroups = new Map();
+  for (const row of enrichedRows) {
+    const coordKey = Number(row.x_coord).toFixed(6) + '|' + Number(row.y_coord).toFixed(6);
+    if (!coordGroups.has(coordKey)) {
+      coordGroups.set(coordKey, {
+        site_id: coordKey,
+        x_coord: row.x_coord,
+        y_coord: row.y_coord,
+        placeCount: 0,
+        placeVariants: [],
+        biogMain: emptyBiogMain(),
+        _searchTexts: [],
+        _adminTypeCounts: new Map(),
+        _sampleIds: new Set(),
+      });
+    }
+
+    const group = coordGroups.get(coordKey);
+    const rowBiog = row.biogMain || emptyBiogMain();
+    group.placeCount += 1;
+    group.placeVariants.push({
+      c_addr_id: row.c_addr_id,
+      c_name: row.c_name,
+      c_name_chn: row.c_name_chn,
+      c_admin_type: row.c_admin_type,
+      c_firstyear: row.c_firstyear,
+      c_lastyear: row.c_lastyear,
+      CHGIS_PT_ID: row.CHGIS_PT_ID,
+      c_notes: row.c_notes,
+      c_alt_names: row.c_alt_names,
+      matchStats: {
+        personCount: rowBiog.personCount,
+        surnameCounts: rowBiog.surnameCounts,
+        dynastyCounts: rowBiog.dynastyCounts,
+        comboCounts: rowBiog.comboCounts,
+      },
+    });
+
+    group._searchTexts.push(
+      row.c_name,
+      row.c_name_chn,
+      adminTypeLabel(row.c_admin_type),
+      row.c_alt_names,
+      row.c_notes
+    );
+
+    const adminKey = row.c_admin_type || '[Unknown]';
+    group._adminTypeCounts.set(adminKey, (group._adminTypeCounts.get(adminKey) || 0) + 1);
+
+    group.biogMain.personCount += rowBiog.personCount || 0;
+    group.biogMain.withBirthyear += rowBiog.withBirthyear || 0;
+    group.biogMain.withDeathyear += rowBiog.withDeathyear || 0;
+    group.biogMain.femaleCount += rowBiog.femaleCount || 0;
+
+    mergeNumberMap(group.biogMain.surnameCounts, rowBiog.surnameCounts);
+    mergeNumberMap(group.biogMain.dynastyCounts, rowBiog.dynastyCounts);
+    mergeNumberMap(group.biogMain.comboCounts, rowBiog.comboCounts);
+
+    for (const [surname, person] of Object.entries(rowBiog.surnameSamples || {})) {
+      if (!group.biogMain.surnameSamples[surname]) {
+        group.biogMain.surnameSamples[surname] = person;
+      }
+    }
+
+    for (const [dynasty, person] of Object.entries(rowBiog.dynastySamples || {})) {
+      if (!group.biogMain.dynastySamples[dynasty]) {
+        group.biogMain.dynastySamples[dynasty] = person;
+      }
+    }
+
+    for (const person of rowBiog.samples || []) {
+      const personId = String(person.c_personid);
+      if (group._sampleIds.has(personId)) continue;
+      if (group.biogMain.samples.length >= 40) continue;
+      group._sampleIds.add(personId);
+      group.biogMain.samples.push(person);
+    }
+  }
+
+  const groupedPoints = [...coordGroups.values()].map((group) => {
+    const variants = group.placeVariants.sort((a, b) => {
+      const yearA = a.c_firstyear || 999999;
+      const yearB = b.c_firstyear || 999999;
+      if (yearA !== yearB) return yearA - yearB;
+      return String(a.c_name_chn || a.c_name || '').localeCompare(String(b.c_name_chn || b.c_name || ''), 'zh-CN');
+    });
+    const firstYears = variants.map((item) => Number(item.c_firstyear || 0)).filter((value) => value !== 0);
+    const lastYears = variants.map((item) => Number(item.c_lastyear || 0)).filter((value) => value !== 0);
+    const dominantAdminType = [...group._adminTypeCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || '[Unknown]';
+    const leadVariant = variants[0] || {};
+
+    group.biogMain.surnames = Object.keys(group.biogMain.surnameCounts).sort((a, b) => a.localeCompare(b, 'zh-CN'));
+    group.biogMain.dynasties = Object.keys(group.biogMain.dynastyCounts).sort((a, b) => a.localeCompare(b, 'zh-CN'));
+    group.biogMain.dynastyCount = group.biogMain.dynasties.length;
+
+    return {
+      site_id: group.site_id,
+      x_coord: group.x_coord,
+      y_coord: group.y_coord,
+      c_name: leadVariant.c_name || '',
+      c_name_chn: group.placeCount > 1
+        ? ((leadVariant.c_name_chn || leadVariant.c_name || '同坐标历史地点') + '等 ' + group.placeCount + ' 条地点记录')
+        : (leadVariant.c_name_chn || leadVariant.c_name || '未命名地点'),
+      c_admin_type: dominantAdminType,
+      c_firstyear: firstYears.length ? Math.min(...firstYears) : 0,
+      c_lastyear: lastYears.length ? Math.max(...lastYears) : 0,
+      CHGIS_PT_ID: leadVariant.CHGIS_PT_ID || '',
+      c_notes: group.placeCount > 1 ? '' : (leadVariant.c_notes || ''),
+      c_alt_names: group.placeCount > 1 ? '' : (leadVariant.c_alt_names || ''),
+      placeCount: group.placeCount,
+      placeVariants: variants,
+      search_text: group._searchTexts.filter(Boolean).join(' '),
+      biogMain: group.biogMain,
+    };
+  });
 
   const topDynasties = [...dynastyGlobalCounts.entries()]
     .sort((a, b) => b[1] - a[1])
     .map(([dynasty, count]) => ({ dynasty, count }));
 
+  const relatedCoordGroupCount = groupedPoints.filter((point) => (point.biogMain?.personCount || 0) > 0).length;
+
   return {
     meta: {
       generatedAt: new Date().toISOString(),
       totalWithCoords: rows.length,
+      coordinateGroupCount: groupedPoints.length,
       adminTypeCount: typeCounts.size,
       topTypes,
       topDynasties,
       relatedAddrCount: personStatsMap.size,
+      relatedCoordGroupCount,
       surnameGlobalCounts: Object.fromEntries(surnameGlobalCounts.entries()),
       surnameLocatedCounts: Object.fromEntries(surnameLocatedCounts.entries()),
       dynastyGlobalCounts: Object.fromEntries(dynastyGlobalCounts.entries()),
     },
-    points: enrichedRows,
+    points: groupedPoints,
   };
 }
 
@@ -462,7 +590,8 @@ function buildHtml(dataset) {
       flex-direction: column;
       gap: 14px;
       max-height: calc(100vh - 24px);
-      overflow: hidden;
+      overflow-y: auto;
+      overflow-x: hidden;
     }
 
     .eyebrow {
@@ -1051,7 +1180,7 @@ function buildHtml(dataset) {
           )).join('') + '</div>'
         : '<div style="margin-top:8px;">当前姓氏过滤下，这个地点没有可展示的人物样本。</div>';
 
-      const sampleHint = isSurnameFiltering && matchedPersonCount > visiblePeople.length
+      const sampleHint = (isSurnameFiltering || isDynastyFiltering) && matchedPersonCount > visiblePeople.length
         ? '<div class="muted" style="margin-top:4px;">该地点实际命中 ' + escapeHtml(matchedPersonCount) + ' 人；为保证页面性能，弹窗仅内置部分人物样本，因此这里展示的是命中的样本子集。</div>'
         : '<div class="muted" style="margin-top:4px;">为避免弹窗过长，这里最多展示前 30 人。</div>';
 
@@ -1067,6 +1196,35 @@ function buildHtml(dataset) {
       );
     }
 
+    function buildPlaceVariantsSection(point) {
+      const variants = Array.isArray(point.placeVariants) ? point.placeVariants : [];
+      if (variants.length <= 1) return '';
+
+      const isFiltering = Boolean(state.surnameQuery.trim()) || state.activeDynasty !== 'ALL';
+      const items = variants.map((variant) => {
+        const variantCount = getMatchedPersonCount(variant.matchStats || {});
+        const displayCount = isFiltering ? variantCount : Number((variant.matchStats && variant.matchStats.personCount) || 0);
+        const yearText = [variant.c_firstyear || '?', variant.c_lastyear || '?'].join(' - ');
+        return (
+          '<div class="person-item">' +
+            '<strong>' + escapeHtml(variant.c_name_chn || '[无中文名]') + '</strong>' +
+            (variant.c_name ? '<div>' + escapeHtml(variant.c_name) + '</div>' : '') +
+            '<div>' + escapeHtml(window.adminTypeLabel(variant.c_admin_type)) + ' · ' + escapeHtml(yearText) + '</div>' +
+            '<div>地点编号：' + escapeHtml(variant.c_addr_id) + '</div>' +
+            '<div>' + (isFiltering ? '当前筛选命中人数：' : '关联人物数：') + escapeHtml(displayCount) + '</div>' +
+          '</div>'
+        );
+      }).join('');
+
+      return (
+        '<div class="person-section">' +
+          '<strong>同坐标历史地点列表</strong>' +
+          '<div style="margin-top:6px;" class="muted">这些地点记录共享同一坐标，因此已合并为一个地图点位进行统计。</div>' +
+          '<div class="person-list">' + items + '</div>' +
+        '</div>'
+      );
+    }
+
     function buildMarker(point) {
       const adminType = point.c_admin_type || '[Unknown]';
       const matchedPersonCount = getMatchedPersonCount(point.biogMain || {});
@@ -1077,7 +1235,7 @@ function buildHtml(dataset) {
           iconSize: [18, 18],
           iconAnchor: [9, 9],
         }),
-        title: point.c_name_chn || point.c_name || String(point.c_addr_id),
+        title: point.c_name_chn || point.c_name || String(point.site_id),
       });
 
       const yearText = [point.c_firstyear || '?', point.c_lastyear || '?'].join(' - ');
@@ -1087,7 +1245,8 @@ function buildHtml(dataset) {
         '<strong>' + escapeHtml(point.c_name_chn || '[无中文名]') + '</strong>' +
         (point.c_name ? '<div>拼写：' + escapeHtml(point.c_name) + '</div>' : '') +
         '<div class="popup-grid">' +
-          '<div>地点编号</div><div>' + escapeHtml(point.c_addr_id) + '</div>' +
+          '<div>坐标点位记录数</div><div>' + escapeHtml(point.placeCount || 1) + '</div>' +
+          '<div>地点编号</div><div>' + escapeHtml(point.placeCount > 1 ? '多条记录' : (point.placeVariants?.[0]?.c_addr_id ?? '')) + '</div>' +
           '<div>行政类型</div><div>' + escapeHtml(window.adminTypeLabel(adminType)) + '</div>' +
           '<div>关联人物数</div><div>' + escapeHtml(matchedPersonCount) + '</div>' +
           '<div>存续年代</div><div>' + escapeHtml(yearText) + '</div>' +
@@ -1096,6 +1255,7 @@ function buildHtml(dataset) {
         '</div>' +
         (point.c_alt_names ? '<div style="margin-top:8px;"><strong>地名别称</strong><br>' + escapeHtml(point.c_alt_names) + '</div>' : '') +
         (point.c_notes ? '<div style="margin-top:8px;"><strong>备注</strong><br>' + escapeHtml(point.c_notes) + '</div>' : '') +
+        buildPlaceVariantsSection(point) +
         buildPeopleSection(point)
       );
       return marker;
@@ -1146,6 +1306,7 @@ function buildHtml(dataset) {
       const q = state.query.trim().toLowerCase();
       if (!q) return true;
       return [
+        point.search_text,
         point.c_name,
         point.c_name_chn,
         point.c_admin_type,
@@ -1194,10 +1355,10 @@ function buildHtml(dataset) {
       const locatedCount = visiblePoints.reduce((sum, point) => sum + getMatchedPersonCount(point.biogMain || {}), 0);
       const regionTop = visiblePoints
         .map((point) => ({
-          name: point.c_name_chn || point.c_name || ('地点 ' + point.c_addr_id),
+          name: point.c_name_chn || point.c_name || '未命名坐标点',
           adminType: window.adminTypeLabel(point.c_admin_type),
           count: getMatchedPersonCount(point.biogMain || {}),
-          addrId: point.c_addr_id,
+          placeCount: point.placeCount || 1,
         }))
         .filter((item) => item.count > 0)
         .sort((a, b) => b.count - a.count || String(a.name).localeCompare(String(b.name), 'zh-CN'))
@@ -1252,10 +1413,11 @@ function buildHtml(dataset) {
 
     function renderStats() {
       const stats = [
-        ['总点位', dataset.meta.totalWithCoords],
+        ['地点记录', dataset.meta.totalWithCoords],
+        ['坐标点位', dataset.meta.coordinateGroupCount || points.length],
         ['行政类型', dataset.meta.adminTypeCount],
         ['当前显示', visiblePoints.length],
-        ['有关联人物的地点', dataset.meta.relatedAddrCount],
+        ['有人物的坐标点', dataset.meta.relatedCoordGroupCount || 0],
       ];
       el.stats.innerHTML = stats.map(([label, value]) => (
         '<div class="stat"><div class="eyebrow">' + escapeHtml(label) + '</div><strong>' + escapeHtml(value) + '</strong></div>'
@@ -1293,7 +1455,7 @@ function buildHtml(dataset) {
           '<div>' +
             '<div class="eyebrow">Top ' + escapeHtml(index + 1) + '</div>' +
             '<strong>' + escapeHtml(item.name) + '</strong>' +
-            '<div class="muted" style="margin-top:4px;">' + escapeHtml(item.adminType) + ' · 地点编号 ' + escapeHtml(item.addrId) + '</div>' +
+            '<div class="muted" style="margin-top:4px;">' + escapeHtml(item.adminType) + ' · 同坐标地点记录 ' + escapeHtml(item.placeCount) + ' 条</div>' +
           '</div>' +
           '<strong>' + escapeHtml(item.count) + '</strong>' +
         '</div>'
@@ -1422,7 +1584,7 @@ function buildHtml(dataset) {
 
       el.mapTitle.textContent = state.activeType === 'ALL' ? '全部点位' : window.adminTypeLabel(state.activeType);
       const subtitleParts = [
-        '当前显示 ' + visiblePoints.length + ' 个带坐标地点；点击点位可查看地点信息，以及按“人物主表索引地”关联到该地点的人物列表。',
+        '当前显示 ' + visiblePoints.length + ' 个坐标点位；同坐标下的多个历史地点记录已合并统计，点击点位可查看地点组信息与关联人物。',
       ];
       if (state.surnameQuery.trim()) {
         subtitleParts.push('当前姓氏过滤：' + state.surnameQuery.trim());
@@ -1440,7 +1602,7 @@ function buildHtml(dataset) {
       }
     }
 
-    el.sidebarDesc.textContent = '本页基于 ADDR_CODES 中的 ' + dataset.meta.totalWithCoords + ' 个带坐标地点，结合 BIOG_MAIN 的人物索引地信息，展示人物与地点的空间分布。支持按地名、姓氏、朝代和行政类型筛选，聚合图标会随点位数量变化大小与颜色，点击点位可查看地点详情、关联人物与统计信息。';
+    el.sidebarDesc.textContent = '本页基于 ADDR_CODES 中的 ' + dataset.meta.totalWithCoords + ' 条带坐标地点记录，按坐标合并为 ' + (dataset.meta.coordinateGroupCount || points.length) + ' 个地图点位，再结合 BIOG_MAIN 的人物索引地信息展示人物与地点的空间分布。支持按地名、姓氏、朝代和行政类型筛选；聚合图标的数字、大小和颜色都表示当前筛选条件下的关联人物数量。';
 
     el.searchInput.addEventListener('input', (event) => {
       state.query = event.target.value;
